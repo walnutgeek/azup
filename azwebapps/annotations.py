@@ -1,6 +1,7 @@
 import re
-from datetime import timedelta, date, datetime
 import typing
+from datetime import date, datetime, timedelta
+
 from dateutil.parser import parse as dt_parse
 
 
@@ -131,7 +132,7 @@ def get_attr_hints(o):
     ...
     >>> get_attr_hints(abc)
     {'x': <class 'str'>, 'y': <class 'int'>, 'z': typing.Dict[str, float], 'return': <class 'bool'>}
-    
+
     """
     return {k: h for k, h in typing.get_type_hints(o).items() if not is_classvar(h)}
 
@@ -142,6 +143,7 @@ def to_snake_case(name):
     ['content_length', 'content_length', 'creation_time', 'last_access_time', 'last_write_time', 'etag']
     """
     return re.sub("([a-z0-9])[-_]?([A-Z])", r"\1_\2", name).lower()
+
 
 SECONDS_IN_DAY = 60 * 60 * 24
 INTERVALS = {
@@ -170,8 +172,9 @@ def to_timedelta(s: str) -> timedelta:
         )
     )
 
+
 FROM_STR_FACTORIES = {
     timedelta: to_timedelta,
     datetime: dt_parse,
-    date: lambda s: dt_parse(s).date()
+    date: lambda s: dt_parse(s).date(),
 }

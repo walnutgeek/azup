@@ -4,7 +4,7 @@ cmdclass_dict = {}  # type:ignore
 
 # MANIFEST.in ensures that readme and version included into sdist
 
-install_requires = ["pyyaml","python-dateutil"]
+install_requires = ["pyyaml", "python-dateutil"]
 
 dev_requires = [
     "hs-build-tools",
