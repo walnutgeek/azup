@@ -57,7 +57,7 @@ setup(
     license="Apache 2.0",
     packages=find_packages(exclude=("*.tests",)),
     cmdclass=cmdclass_dict,
-    entry_points={"console_scripts": ["azwebapps=azwebapps:main"]},
+    entry_points={"console_scripts": ["azup=azwebapps.main:main"]},
     install_requires=install_requires,
     extras_require={"dev": dev_requires},
     zip_safe=False,

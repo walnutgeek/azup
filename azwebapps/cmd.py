@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple, Union
 
-from azwebapps import guess_location_from_display_name
+from azwebapps import guess_location_from_display_name, print_err
 
 
 class CmdRun:
@@ -16,7 +16,7 @@ class CmdRun:
     def __init__(self, cmd, rc=None, out=None, err=None):
         self.cmd = cmd
         if rc is None:
-            print(f"run: {cmd}")
+            print_err(f"run: {cmd}")
             process = subprocess.run(cmd.split(), capture_output=True)
             self.rc = process.returncode
             self.out = process.stdout.decode("utf-8")
@@ -111,16 +111,18 @@ class Cmd:
     record_to: Recorder
     replay_from: Player
 
-    def q(self, cmd: str, show_err: bool = True):
+    def q(self, cmd: str, print_out=False, show_err: bool = True):
         if self.replay_from is None:
             self.run = CmdRun(cmd)
             if self.record_to is not None:
                 self.record_to.record(self.run)
         else:
             self.run = self.replay_from.get(cmd)
-            print(f"fake: {cmd}")
+            print_err(f"fake: {cmd}")
+        if print_out:
+            print_err(self.run.out)
         if show_err and self.run.err:
-            print(self.run.err, file=sys.stderr)
+            print_err(self.run.err)
         if self.run.rc != 0:
             raise ValueError(f"rc:{self.run.rc}")
         return self
@@ -133,7 +135,7 @@ class Cmd:
         try:
             return json.loads(self.run.out)
         except:
-            print(f"not json: {self.run.out}", file=sys.stderr)
+            print_err(f"not json: {self.run.out}", file=sys.stderr)
             return None
 
     def text(self):
@@ -184,24 +186,13 @@ class AzCmd(Cmd):
 
     def list_file_shares(self, storage: "c.Storage"):
         return self.q(
-            f"az storage share list --account-name {storage.name} ", show_err=False
+            f"az storage share list --account-name {storage.name} ",
+            show_err=False,
         ).json()
 
     def list_services(self):
         config: "c.WebServicesConfig" = self.ctx.config
         return self.q(f"az webapp list --resource-group {config.group}").json()
-
-    def get_service_props(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
-        return self.q(
-            f"az webapp config container show -n {ss.name} -g {config.group}"
-        ).json()
-
-    def list_service_props(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
-        return self.q(
-            f"az webapp config container show -n {ss.name} -g {config.group}"
-        ).json()
 
     def list_webapp_shares(self, service: "c.Service"):
         config: "c.WebServicesConfig" = self.ctx.config
@@ -210,6 +201,15 @@ class AzCmd(Cmd):
             f"--resource-group {config.group} --name {service.name}",
             show_err=False,
         ).json()
+
+    def delete_acr_image(self, iv: "c.ImageVer"):
+        repo: c.Repository = iv.repo_path.get_config()
+        acr: c.Acr = iv.repo_path.parent(2).get_config()
+        return self.q(
+            f"az acr repository delete --yes -n {acr.name} "
+            f"--image {acr.name}/{repo.name}@{iv.digest}"
+        ).text()
+
 
     def mount_share(self, mount: "c.Mount"):
         config: "c.WebServicesConfig" = self.ctx.config
@@ -226,6 +226,19 @@ class AzCmd(Cmd):
     # az webapp config storage-account list --resource-group {config.group} --name {ss.name}
     # az webapp config storage-account delete --custom-id {sharec.custom_id} --resource-group {config.group} --name {ss.name}
 
+
+    def get_service_props(self, ss: "c.ServiceState"):
+        config: "c.WebServicesConfig" = self.ctx.config
+        return self.q(
+            f"az webapp config container show -n {ss.name} -g {config.group}"
+        ).json()
+
+    def list_service_props(self, ss: "c.ServiceState"):
+        config: "c.WebServicesConfig" = self.ctx.config
+        return self.q(
+            f"az webapp config container show -n {ss.name} -g {config.group}"
+        ).json()
+
     def create_webapp(self, ss: "c.ServiceState"):
         config: "c.WebServicesConfig" = self.ctx.config
         plan: c.AppServicePlan = ss.path.parent(2).get_config()
@@ -234,13 +247,6 @@ class AzCmd(Cmd):
             f"-p {plan.name} -i {ss.docker_url()}"
         ).json()
 
-    def delete_acr_image(self, iv: "c.ImageVer"):
-        repo: c.Repository = iv.repo_path.get_config()
-        acr: c.Acr = iv.repo_path.parent(2).get_config()
-        return self.q(
-            f"az acr repository delete --yes -n {acr.name} "
-            f"--image {acr.name}/{repo.name}@{iv.digest}"
-        ).text()
 
     def delete_webapp(self, ss: "c.Service"):
         config: "c.WebServicesConfig" = self.ctx.config

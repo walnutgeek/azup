@@ -1,4 +1,5 @@
 import re
+import sys
 from datetime import date, datetime, timedelta
 from typing import Callable, Dict, Type
 
@@ -56,3 +57,15 @@ FROM_STR_FACTORIES: Dict[Type, Callable] = {
     datetime: dt_parse,
     date: lambda s: dt_parse(s).date(),
 }
+
+
+def print_err(*args):
+    print(*args, file=sys.stderr)
+
+
+def mount_to_id(mount_dir):
+    """
+    >>> mount_to_id("/d4")
+    '_d4'
+    """
+    return mount_dir.replace("/", "_")

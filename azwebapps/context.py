@@ -80,6 +80,11 @@ class ContextAware:
         setattrs_from_dict(o, path, d)
         return o
 
+    def update(self, **props):
+        for k, v in props.items():
+            setattr(self, k, v)
+        return self
+
 
 # storage
 
@@ -121,7 +126,7 @@ class Mount(ContextAware):
     share: str
 
     def default_custom_id(self):
-        return self.name.replace("/", "_")
+        return azwebapps.mount_to_id(self.name)
 
     def access_key(self):
         acc_path = self.path.absolute("storages", self.name)
@@ -204,7 +209,7 @@ class ImageVer:
         return str(self)
 
 
-class RepoState(Repository):
+class RepositoryState(Repository):
     vers: typing.List[ImageVer]
     by_tag: typing.Dict[str, ImageVer]
 
@@ -217,6 +222,7 @@ class RepoState(Repository):
             if iv.tags:
                 for tag in iv.tags:
                     self.by_tag[tag] = iv
+        return self
 
     def to_remove(self, now: datetime = None) -> typing.List[ImageVer]:
         if not now:
@@ -231,7 +237,7 @@ class AcrState(Acr):
         az_cmd = self.path.ctx.az_cmd
         self.name = self.path.key()
         self.repos = {
-            n: RepoState.build(self, "repos", n).load(self)
+            n: RepositoryState.build(self, "repos", n).load(self)
             for n in az_cmd.get_acr_repo_list(self)
         }
         return self
@@ -241,6 +247,7 @@ class FileShareState(FileShare):
     def load(self, d: typing.Dict[str, typing.Any]):
         self.name = self.path.key()
         self.quota = d["properties"]["quota"]
+        return self
 
 
 class StorageState(Storage):
@@ -254,6 +261,7 @@ class StorageState(Storage):
             d["name"]: FileShareState.build(self, "shares", d["name"]).load(d)
             for d in az_cmd.list_file_shares(self)
         }
+        return self
 
     def get_keys(self) -> typing.List[str]:
         az_cmd = self.path.ctx.az_cmd
@@ -262,13 +270,15 @@ class StorageState(Storage):
 
 class MountState(Mount):
     state: str
+    custom_id: str
 
     def load(self, d: typing.Dict[str, typing.Any]) -> "MountState":
         self.name = self.path.key()
+        val = d["value"]
         self.custom_id = d["name"]
-        self.state = d["value"]["state"]
-        self.name = d["value"]["accountName"]
-        self.share = d["value"]["shareName"]
+        self.state = val["state"]
+        self.account = val["accountName"]
+        self.share = val["shareName"]
         return self
 
 
@@ -283,7 +293,9 @@ class ServiceState(Service):
         self.docker = d["siteConfig"]["linuxFxVersion"]
         self.container = Container.parse(self.docker)
         self.mounts = {
-            d["name"]: MountState.build(self, "mounts", d["value"]["mountPath"]).load(d)
+            d["value"]["mountPath"]: MountState.build(
+                self, "mounts", d["value"]["mountPath"]
+            ).load(d)
             for d in az_cmd.list_webapp_shares(self)
         }
         return self
@@ -292,7 +304,7 @@ class ServiceState(Service):
         return f"DOCKER|{self.docker_url()}"
 
     def docker_url(self):
-        repo: RepoState = self.path.absolute(
+        repo: RepositoryState = self.path.absolute(
             "acrs", self.container.acr, "repos", self.container.repo
         ).get_state()
         return f"{repo.url()}:{repo.by_tag[self.container.tag].git}"
@@ -338,6 +350,7 @@ class WebServicesState(WebServicesConfig):
             plan = self.plans[plan_name]
             name = d["name"]
             plan.services[name] = ServiceState.build(plan, "services", name).load(d)
+        return self
 
 
 class Context:
@@ -345,8 +358,8 @@ class Context:
     state: WebServicesState
     az_cmd: "AzCmd"
 
-    str_factories: typing.Dict[typing.Type, typing.Callable]
-    dict_factories: typing.Dict[typing.Type, typing.Callable]
+    str_factories: typing.Dict[typing.Type, typing.Callable] = {}
+    dict_factories: typing.Dict[typing.Type, typing.Callable] = {}
 
     def __init__(self, az_cmd: "AzCmd"):
         self.az_cmd = az_cmd
@@ -356,10 +369,17 @@ class Context:
         return CtxPath(self)
 
     def load_config(self, config_file):
+        self.init_context(
+            lambda root: load_from_file(config_file, root, WebServicesConfig)
+        )
+
+    def init_context(
+        self, config_factory: typing.Callable[[CtxPath], WebServicesConfig]
+    ):
         root = self.root()
         root.ctx.dict_factories = build_factory_dict(YAMLABLE_OBJECTS)
         root.ctx.str_factories = azwebapps.FROM_STR_FACTORIES
-        self.config = load_from_file(config_file, root, WebServicesConfig)
+        self.config = config_factory(root)
         self.state = WebServicesState(root)
         self.state.load()
 
