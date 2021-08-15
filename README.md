@@ -8,4 +8,4 @@ Install all dependencies:
 
 Tidy up and run tests:
     
-    python setup.py tidy;pytest --cov --cov-report html
+    python setup.py tidy; pytest
