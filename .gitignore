@@ -6,3 +6,6 @@ __pycache__
 /.mypy_cache
 /.pytest_cache
 *yml
+/recordings
+/htmlcov
+.coverage

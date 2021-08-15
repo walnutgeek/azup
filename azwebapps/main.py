@@ -1,13 +1,10 @@
+import inspect
 import sys
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Tuple
 
 import azwebapps.context as c
-from azwebapps.cmd import AzCmd
-
-
-class StateContext(c.Context):
-    def __init__(self, az_cmd: AzCmd):
-        self.az_cmd = az_cmd
-        az_cmd.ctx = self
+from azwebapps.cmd import AzCmd, Player, Recorder, parse_recorder_file
 
 
 class Actions:
@@ -58,9 +55,58 @@ class Actions:
 #
 
 
-def main(args=sys.argv[1:], az_cmd=AzCmd):
-    ctx = StateContext(az_cmd)
-    ctx.dict_factories = c.CONFIG_FACTORIES
-    ctx.config = c.load_config(ctx.root(), args[0])
-    ctx.state = c.WebServicesState(ctx.root())
-    ctx.state.load()
+def filter_options(ll: Iterable[str]) -> Tuple[List[str], Dict[str, Any]]:
+    """
+    >>> filter_options(["a","-a","-b:a"])
+    (['a'], {'a': True, 'b': 'a'})
+    >>>
+    """
+    filtered = []
+    options: Dict[str, Any] = {}
+    for l in ll:
+        if l.startswith("-"):
+            split = l[1:].split(":", 2)
+            if len(split) == 1:
+                options[split[0]] = True
+            else:
+                options[split[0]] = split[1]
+        else:
+            filtered.append(l)
+    return filtered, options
+
+
+def main(args: List[str] = sys.argv[1:]):
+    args, options = filter_options(args)
+    rec_dir = Path("recordings")
+    if "record" in options:
+        if not rec_dir.is_dir():
+            rec_dir.mkdir(0o0755)
+        az_cmd = AzCmd(record_to=Recorder(rec_dir / options["record"], args))
+    elif "replay" in options:
+        cmd_line, records = parse_recorder_file(rec_dir / options["replay"])
+        print(f"Replaying: {' '.join(cmd_line)}")
+        # args = cmd_line
+        az_cmd = AzCmd(replay_from=Player(records))
+    else:
+        az_cmd = AzCmd()
+
+    show_help = len(args) < 2 or options.get("h", False)
+    ctx = c.Context(az_cmd)
+    ctx.load_config(args[0])
+
+    if show_help:
+
+        print("\nUSAGES:")
+        actions = [f for f in dir(Actions) if not f.startswith("_")]
+        for a in actions:
+            fn = getattr(Actions, a)
+            names, _, _, defaults = inspect.getfullargspec(fn)[:4]
+            if defaults is None:
+                defaults = ()
+            def_offset = len(names) - len(defaults)
+            optonals = {k: v for k, v in zip(names[def_offset:], defaults)}
+            a_args = " ".join(
+                f"[{n}]" if n in optonals else f"<{n}>" for n in names[1:]
+            )
+            print(f" {sys.argv[0]} {a} {a_args}")
+        print()

@@ -1,19 +1,9 @@
 import typing
 from datetime import datetime, timedelta
 
-import yaml
 from dateutil.parser import parse as dt_parse
-from yaml.loader import SafeLoader
 
 import azwebapps
-from azwebapps.annotations import (
-    FROM_STR_FACTORIES,
-    get_args,
-    get_attr_hints,
-    is_dict,
-    is_from_typing_module,
-    is_list,
-)
 
 
 class CtxPath:
@@ -81,93 +71,14 @@ class ContextAware:
         return cls(parent.path.child(*parts))
 
     @classmethod
-    def from_dict(cls, path: CtxPath, d: typing.Dict[str, typing.Any]):
+    def from_dict(
+        cls, path: CtxPath, d: typing.Dict[str, typing.Any]
+    ) -> "ContextAware":
         o = cls(path)
         if not path.is_root():
             o.name = path.key()  # type:ignore
-        setattrs_from_dict(o, path, d, from_dict_factories=o.path.ctx.dict_factories)
+        setattrs_from_dict(o, path, d)
         return o
-
-    def update(self, **props):
-        for k, v in props.items():
-            setattr(self, k, v)
-        return self
-
-
-def setattrs_from_dict(
-    o: typing.Any,
-    path: CtxPath,
-    d: typing.Dict[str, typing.Any],
-    from_str_factories=FROM_STR_FACTORIES,
-    from_dict_factories={},
-):
-    hints = get_attr_hints(type(o))
-    for k in d.keys():
-        if k not in hints:
-            raise ValueError(f"{k} not in {hints}")
-        v = cast_to_type(
-            hints[k],
-            None if path is None else path.child(k),
-            d[k],
-            from_str_factories,
-            from_dict_factories,
-        )
-        setattr(o, k, v)
-    return o
-
-
-def cast_to_type(
-    cls,
-    path: CtxPath,
-    in_v,
-    from_str_factories=FROM_STR_FACTORIES,
-    from_dict_factories={},
-):
-    """ """
-    if in_v is None:
-        return None
-    in_cls = type(in_v)
-    if cls == in_cls:
-        return in_v
-
-    elif in_cls == str:
-        if cls in from_str_factories:
-            return from_str_factories[cls](in_v)
-        else:
-            return cls(in_v)
-    elif is_from_typing_module(cls):
-        args = get_args(cls, [])
-        if is_dict(cls, args):
-            return {
-                child_k: cast_to_type(
-                    args[1],
-                    path.child(child_k),
-                    in_v[child_k],
-                    from_str_factories,
-                    from_dict_factories,
-                )
-                for child_k in in_v
-            }
-        elif is_list(cls, args):
-            return [
-                cast_to_type(
-                    args[1],
-                    path.child(str(idx)),
-                    v,
-                    from_str_factories,
-                    from_dict_factories,
-                )
-                for idx, v in enumerate(in_v)
-            ]
-    elif in_cls == dict:
-        if cls in from_dict_factories:
-            factory = from_dict_factories[cls]
-            if "path" in get_attr_hints(factory):
-                return factory(path, in_v)
-            else:
-                return factory(in_v)
-        else:
-            return cls(in_v)
 
 
 # storage
@@ -225,8 +136,8 @@ class Container:
     tag: str
 
     @classmethod
-    def from_dict(cls, d: typing.Dict[str, typing.Any]) -> "Container":
-        return setattrs_from_dict(cls(), None, d, from_dict_factories=CONFIG_FACTORIES)
+    def from_dict(cls, path: CtxPath, d: typing.Dict[str, typing.Any]) -> "Container":
+        return setattrs_from_dict(cls(), path, d)
 
     @classmethod
     def parse(cls, docker_spec: str) -> "Container":
@@ -260,25 +171,17 @@ class WebServicesConfig(ContextAware):
     acrs: typing.Dict[str, Acr]
 
 
-CONFIG_FACTORIES = {
-    cls: cls.from_dict  # type:ignore
-    for cls in (
-        WebServicesConfig,
-        Repository,
-        Service,
-        AppServicePlan,
-        Container,
-        Storage,
-        Acr,
-        FileShare,
-        Mount,
-    )
-}
-
-
-def load_config(root: CtxPath, f):
-    with open(f) as fp:
-        return WebServicesConfig.from_dict(root, yaml.load(fp, Loader=SafeLoader))
+YAMLABLE_OBJECTS = (
+    WebServicesConfig,
+    AppServicePlan,
+    Service,
+    Container,
+    Mount,
+    Storage,
+    FileShare,
+    Acr,
+    Repository,
+)
 
 
 class ImageVer:
@@ -440,11 +343,26 @@ class WebServicesState(WebServicesConfig):
 class Context:
     config: WebServicesConfig
     state: WebServicesState
-    dict_factories: typing.Dict[typing.Type, typing.Callable]
     az_cmd: "AzCmd"
+
+    str_factories: typing.Dict[typing.Type, typing.Callable]
+    dict_factories: typing.Dict[typing.Type, typing.Callable]
+
+    def __init__(self, az_cmd: "AzCmd"):
+        self.az_cmd = az_cmd
+        az_cmd.ctx = self
 
     def root(self):
         return CtxPath(self)
 
+    def load_config(self, config_file):
+        root = self.root()
+        root.ctx.dict_factories = build_factory_dict(YAMLABLE_OBJECTS)
+        root.ctx.str_factories = azwebapps.FROM_STR_FACTORIES
+        self.config = load_from_file(config_file, root, WebServicesConfig)
+        self.state = WebServicesState(root)
+        self.state.load()
+
 
 from .cmd import AzCmd
+from .yaml import build_factory_dict, load_from_file, setattrs_from_dict
