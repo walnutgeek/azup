@@ -113,107 +113,7 @@ class ContextAware:
         return self
 
 
-# storage
-
-
-class FileShare(ContextAware):
-    name: str
-    quota: int
-    key_used: int
-
-
-class Storage(ContextAware):
-    name: str
-    shares: typing.Dict[str, FileShare]
-
-
 # container image repo
-
-
-class Repository(ContextAware):
-    name: str
-    purge_after: timedelta
-
-    def url(self):
-        acr: Acr = self.path.parent(2).get_config()
-        return f"{acr.name}.azurecr.io/{acr.name}/{self.name}"
-
-
-class Acr(ContextAware):
-    name: str
-    repos: typing.Dict[str, Repository]
-
-
-# app services
-
-
-class Mount(ContextAware):
-    name: str
-    account: str
-    share: str
-
-    def default_custom_id(self):
-        return azwebapps.mount_to_id(self.name)
-
-    def access_key(self):
-        acc_path = self.path.absolute("storages", self.name)
-        fs: FileShare = acc_path.child("shares", self.share).get_config()
-        storage: StorageState = acc_path.get_state()
-        return storage.get_keys()[fs.key_used]
-
-
-class Container:
-    acr: str
-    repo: str
-    tag: str
-
-    @classmethod
-    def from_dict(cls, path: CtxPath, d: typing.Dict[str, typing.Any]) -> "Container":
-        return setattrs_from_dict(cls(), path, d)
-
-    @classmethod
-    def parse(cls, docker_spec: str) -> "Container":
-        o = cls()
-        _, o.acr, rest = docker_spec.split("|")[1].split("/")
-        o.repo, o.tag = rest.split(":")
-        return o
-
-
-class Service(ContextAware):
-    name: str
-    container: Container
-    mounts: typing.Dict[str, Mount]
-
-
-class AppServicePlan(ContextAware):
-    name: str
-    sku: str
-    kind: str
-    location: str
-    services: typing.Dict[str, Service]
-
-
-# root config
-
-
-class WebServicesConfig(ContextAware):
-    group: str
-    storages: typing.Dict[str, Storage]
-    plans: typing.Dict[str, AppServicePlan]
-    acrs: typing.Dict[str, Acr]
-
-
-YAMLABLE_OBJECTS = (
-    WebServicesConfig,
-    AppServicePlan,
-    Service,
-    Container,
-    Mount,
-    Storage,
-    FileShare,
-    Acr,
-    Repository,
-)
 
 PURGE = "purge"
 IN_USE = "in_use"
@@ -261,6 +161,15 @@ class ImageVer:
         return self
 
 
+class Repository(ContextAware):
+    name: str
+    purge_after: timedelta
+
+    def url(self):
+        acr: Acr = self.path.parent(2).get_config()
+        return f"{acr.name}.azurecr.io/{acr.name}/{self.name}"
+
+
 class RepositoryState(Repository):
     vers: typing.List[ImageVer]
     by_tag: typing.Dict[str, ImageVer]
@@ -272,22 +181,25 @@ class RepositoryState(Repository):
             (ImageVer(self.path, v) for v in az_cmd.show_manifests(self, acr)),
             key=lambda iv: iv.timestamp,
         )
-        self.by_tag = {}
-        for iv in self.vers:
-            for k in iv.all_ids():
-                self.by_tag[k] = iv
+        self.by_tag = {k: iv for iv in self.vers for k in iv.all_ids()}
         return self
 
     def to_remove(self, now: datetime = None) -> typing.List[ImageVer]:
+        ctx = self.path.ctx
         if not now:
-            now = datetime.utcnow()
+            now = ctx.utcnow()
         repo: Repository = self.path.get_config()
         cutoff = now - repo.purge_after
         for iv in self.vers:
             iv.set_tag(PURGE, iv.timestamp < cutoff)
-        for tag in self.path.ctx.state.find_all_tags_in_use(self):
+        for tag in ctx.state.find_all_tags_in_use(self):
             self.by_tag[tag].set_tag(IN_USE, True).set_tag(PURGE, False)
         return [iv for iv in self.vers if PURGE in iv.tags]
+
+
+class Acr(ContextAware):
+    name: str
+    repos: typing.Dict[str, Repository]
 
 
 class AcrState(Acr):
@@ -301,11 +213,25 @@ class AcrState(Acr):
         return self
 
 
+# storage
+
+
+class FileShare(ContextAware):
+    name: str
+    quota: int
+    key_used: int
+
+
 class FileShareState(FileShare):
     def load(self, d: typing.Dict[str, typing.Any]):
         self.name = self.path.key()
         self.quota = d["properties"]["quota"]
         return self
+
+
+class Storage(ContextAware):
+    name: str
+    shares: typing.Dict[str, FileShare]
 
 
 class StorageState(Storage):
@@ -326,6 +252,41 @@ class StorageState(Storage):
         return [d["value"] for d in az_cmd.list_storage_keys(self)]
 
 
+# app services
+
+
+class Container:
+    acr: str
+    repo: str
+    tag: str
+
+    @classmethod
+    def from_dict(cls, path: CtxPath, d: typing.Dict[str, typing.Any]) -> "Container":
+        return setattrs_from_dict(cls(), path, d)
+
+    @classmethod
+    def parse(cls, docker_spec: str) -> "Container":
+        o = cls()
+        _, o.acr, rest = docker_spec.split("|")[1].split("/")
+        o.repo, o.tag = rest.split(":")
+        return o
+
+
+class Mount(ContextAware):
+    name: str
+    account: str
+    share: str
+
+    def default_custom_id(self):
+        return azwebapps.mount_to_id(self.name)
+
+    def access_key(self):
+        acc_path = self.path.absolute("storages", self.name)
+        fs: FileShare = acc_path.child("shares", self.share).get_config()
+        storage: StorageState = acc_path.get_state()
+        return storage.get_keys()[fs.key_used]
+
+
 class MountState(Mount):
     state: str
     custom_id: str
@@ -338,6 +299,15 @@ class MountState(Mount):
         self.account = val["accountName"]
         self.share = val["shareName"]
         return self
+
+
+class Service(ContextAware):
+    name: str
+    container: Container
+    mounts: typing.Dict[str, Mount]
+
+    def create(self):
+        pass
 
 
 class ServiceState(Service):
@@ -367,6 +337,23 @@ class ServiceState(Service):
         ).get_state()
         return f"{repo.url()}:{repo.by_tag[self.container.tag].git}"
 
+    def update(self):
+        pass
+
+    def delete(self):
+        pass
+
+
+class AppServicePlan(ContextAware):
+    name: str
+    sku: str
+    kind: str
+    location: str
+    services: typing.Dict[str, Service]
+
+    def create(self):
+        pass
+
 
 class AppServicePlanState(AppServicePlan):
     def load(self, d: typing.Dict[str, typing.Any]) -> "AppServicePlanState":
@@ -374,6 +361,22 @@ class AppServicePlanState(AppServicePlan):
         self.sku = d["sku"]["name"]
         self.services = {}
         return self
+
+    def update(self):
+        pass
+
+    def delete(self):
+        pass
+
+
+# root objects
+
+
+class WebServicesConfig(ContextAware):
+    group: str
+    storages: typing.Dict[str, Storage]
+    plans: typing.Dict[str, AppServicePlan]
+    acrs: typing.Dict[str, Acr]
 
 
 class WebServicesState(WebServicesConfig):
@@ -422,10 +425,24 @@ class WebServicesState(WebServicesConfig):
         ]
 
 
+YAMLABLE_OBJECTS = (
+    WebServicesConfig,
+    AppServicePlan,
+    Service,
+    Container,
+    Mount,
+    Storage,
+    FileShare,
+    Acr,
+    Repository,
+)
+
+
 class Context:
     config: WebServicesConfig
     state: WebServicesState
     az_cmd: "AzCmd"
+    override_now: datetime
 
     str_factories: typing.Dict[typing.Type, typing.Callable] = {}
     dict_factories: typing.Dict[typing.Type, typing.Callable] = {}
@@ -433,6 +450,7 @@ class Context:
     def __init__(self, az_cmd: "AzCmd"):
         self.az_cmd = az_cmd
         az_cmd.ctx = self
+        self.override_now = None
 
     def root(self):
         return CtxPath(self)
@@ -451,6 +469,11 @@ class Context:
         self.config = config_factory(root)
         self.state = WebServicesState(root)
         self.state.load()
+
+    def utcnow(self):
+        if self.override_now:
+            return self.override_now
+        return datetime.utcnow()
 
 
 from .cmd import AzCmd
