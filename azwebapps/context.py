@@ -27,10 +27,22 @@ class CtxPath:
         return self.parts[-1]
 
     def all_keys(self):
-        pp = self.parent()
-        keys = set(pp.get_config().keys())
-        keys.update(pp.get_state().keys())
+        keys = set(self.get_config().keys())
+        keys.update(self.get_state().keys())
         return keys
+
+    def all_presences(self) -> typing.List["CtxPresence"]:
+        """
+        :return: [(name, path, in_config, in_state),...]
+        """
+        return list(
+            map(
+                lambda n: CtxPresence(
+                    self.child(n), n in self.get_config(), n in self.get_state()
+                ),
+                self.all_keys(),
+            )
+        )
 
     def get_state(self) -> typing.Any:
         return self._walk_the_path(self.ctx.state)
@@ -57,7 +69,22 @@ class CtxPath:
             return x
 
     def __str__(self):
-        return " > ".join(self.parts)
+        return ">".join(self.parts)
+
+
+class CtxPresence(typing.NamedTuple):
+    path: CtxPath
+    in_config: bool
+    in_state: bool
+
+    def name(self):
+        return self.path.key()
+
+    def get_state(self):
+        return self.path.get_state()
+
+    def get_config(self):
+        return self.path.get_config()
 
 
 class ContextAware:
@@ -188,25 +215,50 @@ YAMLABLE_OBJECTS = (
     Repository,
 )
 
+PURGE = "purge"
+IN_USE = "in_use"
+
 
 class ImageVer:
+    repo_path: CtxPath
+    digest: str
+    timestamp: datetime
+    labels: typing.List[str]
+    git: str
+    tags: typing.Set[str]
+
     def __init__(self, repo_path: CtxPath, d: typing.Dict[str, typing.Any]):
         self.repo_path = repo_path
         self.digest = d["digest"]
         self.timestamp = dt_parse(d["timestamp"]).replace(tzinfo=None)
-        self.tags = []
+        self.labels = []
+        self.tags = set()
         self.git = None
+        self.time_to_purge = None
         for t in d["tags"]:
             if len(t) == 40:
                 self.git = t
             else:
-                self.tags.append(t)
+                self.labels.append(t)
+
+    def all_ids(self):
+        return set(t for t in (*self.labels, self.git, self.digest) if t)
 
     def __str__(self):
-        return f"{self.digest} {self.timestamp} {self.git} {self.tags}"
+        return (
+            f"{self.digest} {self.timestamp} {self.git}"
+            f" {self.labels} {' '.join(self.tags)}"
+        )
 
     def __repr__(self):
         return str(self)
+
+    def set_tag(self, tag: str, sw: bool):
+        if sw:
+            self.tags.add(tag)
+        elif tag in self.tags:
+            self.tags.remove(tag)
+        return self
 
 
 class RepositoryState(Repository):
@@ -216,12 +268,14 @@ class RepositoryState(Repository):
     def load(self, acr: "AcrState"):
         az_cmd = self.path.ctx.az_cmd
         self.name = self.path.key()
-        self.vers = [ImageVer(self.path, v) for v in (az_cmd.show_manifests(self, acr))]
+        self.vers = sorted(
+            (ImageVer(self.path, v) for v in az_cmd.show_manifests(self, acr)),
+            key=lambda iv: iv.timestamp,
+        )
         self.by_tag = {}
         for iv in self.vers:
-            if iv.tags:
-                for tag in iv.tags:
-                    self.by_tag[tag] = iv
+            for k in iv.all_ids():
+                self.by_tag[k] = iv
         return self
 
     def to_remove(self, now: datetime = None) -> typing.List[ImageVer]:
@@ -229,7 +283,11 @@ class RepositoryState(Repository):
             now = datetime.utcnow()
         repo: Repository = self.path.get_config()
         cutoff = now - repo.purge_after
-        return [iv for iv in self.vers if iv.timestamp < cutoff]
+        for iv in self.vers:
+            iv.set_tag(PURGE, iv.timestamp < cutoff)
+        for tag in self.path.ctx.state.find_all_tags_in_use(self):
+            self.by_tag[tag].set_tag(IN_USE, True).set_tag(PURGE, False)
+        return [iv for iv in self.vers if PURGE in iv.tags]
 
 
 class AcrState(Acr):
@@ -339,18 +397,29 @@ class WebServicesState(WebServicesConfig):
             d["name"]: StorageState.build(self, "storages", d["name"]).load(d)
             for d in az_cmd.get_storage_list()
         }
+        self.load_service_plans()
+        return self
 
+    def load_service_plans(self):
+        az_cmd = self.path.ctx.az_cmd
         self.plans = {
             d["name"]: AppServicePlanState.build(self, "plans", d["name"]).load(d)
             for d in az_cmd.get_plan_list()
         }
-
         for d in az_cmd.list_services():
             plan_name = d["appServicePlanId"].split("/")[-1]
             plan = self.plans[plan_name]
             name = d["name"]
             plan.services[name] = ServiceState.build(plan, "services", name).load(d)
-        return self
+
+    def find_all_tags_in_use(self, repo: RepositoryState) -> typing.List[str]:
+        acr: AcrState = repo.path.parent(2).get_state()
+        return [
+            service.container.tag
+            for plan in self.plans.values()
+            for service in plan.services.values()
+            if service.container.repo == repo.name and service.container.acr == acr.name
+        ]
 
 
 class Context:

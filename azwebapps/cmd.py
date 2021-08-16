@@ -210,7 +210,6 @@ class AzCmd(Cmd):
             f"--image {acr.name}/{repo.name}@{iv.digest}"
         ).text()
 
-
     def mount_share(self, mount: "c.Mount"):
         config: "c.WebServicesConfig" = self.ctx.config
         service: c.Service = mount.path.parent(2).get_config()
@@ -225,7 +224,6 @@ class AzCmd(Cmd):
 
     # az webapp config storage-account list --resource-group {config.group} --name {ss.name}
     # az webapp config storage-account delete --custom-id {sharec.custom_id} --resource-group {config.group} --name {ss.name}
-
 
     def get_service_props(self, ss: "c.ServiceState"):
         config: "c.WebServicesConfig" = self.ctx.config
@@ -246,7 +244,6 @@ class AzCmd(Cmd):
             f"az webapp create -n {ss.name} -g {config.group} "
             f"-p {plan.name} -i {ss.docker_url()}"
         ).json()
-
 
     def delete_webapp(self, ss: "c.Service"):
         config: "c.WebServicesConfig" = self.ctx.config

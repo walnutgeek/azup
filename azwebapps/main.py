@@ -13,20 +13,58 @@ class Actions:
     def __init__(self, az_cmd: AzCmd):
         self.ctx = c.Context(az_cmd)
 
+    def list_images(self, config_yml):
+        self.ctx.load_config(config_yml)
+        out = []
+        for acr_name, acr in self.ctx.state.acrs.items():
+            for repo_name in acr.repos:
+                repo: c.RepositoryState = acr.repos[repo_name]
+                repo.to_remove()
+                out.append(f"Repo: {acr_name}/{repo_name}")
+                for iv in repo.vers:
+                    out.append(str(iv))
+        return "\n".join(out) + "\n"
+
     def purge_acr(self, config_yml):
         self.ctx.load_config(config_yml)
         for acr_name, acr in self.ctx.state.acrs.items():
             for repo_name in acr.repos:
-                repo:c.RepositoryState = acr.repos[repo_name]
+                repo: c.RepositoryState = acr.repos[repo_name]
                 to_remove = repo.to_remove()
                 if len(to_remove):
-                    print_err(f'Repo: {acr_name}/{repo_name}')
+                    print_err(f"Repo: {acr_name}/{repo_name}")
                     for iv in to_remove:
-                        print_err(f'purge: {iv}')
+                        print_err(f"purge: {iv}")
                         print_err(self.ctx.az_cmd.delete_acr_image(iv))
 
     def syncup_apps(self, config_yml):
         self.ctx.load_config(config_yml)
+        plans_path = self.ctx.root().child("plans")
+        # Delete services and plans that not mentioned in config, and create plans
+        # that does not exist in azure
+        for plan in plans_path.all_presences():
+            if not plan.in_state:
+                plan.get_config().create()
+            elif not plan.in_config:
+                for service in plan.get_state().services.values():
+                    service.delete()
+                plan.get_state().delete()
+            else:
+                for service in plan.path.child("services").all_presences():
+                    if not service.in_config:
+                        service.get_state().delete()
+        self.ctx.state.load_service_plans()
+        for plan in plans_path.all_presences():
+            assert (
+                plan.in_state and plan.in_config
+            ), f"{plan_p} should be created already"
+            plan.get_state().update()
+            for service in plan.path.child("services").all_presences():
+                assert service.in_config, f"{service_p} should be mentioned in config"
+                if not service.in_state:
+                    service.get_config().create()
+                else:
+                    service.get_state().update()
 
     # current = {  state.name :state for state in map(ServiceState.from_dict,az_cmd.list_services(config)) }
     # desired = {}
@@ -56,15 +94,11 @@ class Actions:
     #             print_err(az_cmd.update_webapp_docker(config, desired[sn]))
     #             print_err(az_cmd.restart_webapp(config, desired[sn]))
 
-
     def dump_config(self, resource_group):
         self.ctx.init_context(
             lambda root: c.WebServicesState(root).update(group=resource_group)
         )
         return to_yaml(self.ctx.state, c.YAMLABLE_OBJECTS)
-
-
-
 
 
 def filter_options(ll: Iterable[str]) -> Tuple[List[str], Dict[str, Any]]:
@@ -131,6 +165,7 @@ def main(args: List[str] = sys.argv[1:]):
             print_err(f" {sys.argv[0]} {a} {a_args}")
         print_err()
     return out
+
 
 if __name__ == "__main__":
     print(main() or "")
