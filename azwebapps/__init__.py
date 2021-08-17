@@ -1,19 +1,70 @@
 import re
 import sys
 from datetime import date, datetime, timedelta
-from typing import Callable, Dict, Type
+from typing import Callable, Dict, List, Tuple, Type, Union
 
 from dateutil.parser import parse as dt_parse
 
 
-def guess_location_from_display_name(display_name):
+def cleanup_misc_chars(display_name):
     """
-    >>> guess_location_from_display_name("UAE Central")
+    >>> cleanup_misc_chars("UAE Central")
     'uaecentral'
-    >>> guess_location_from_display_name("Southeast Asia (Stage)")
+    >>> cleanup_misc_chars("Southeast Asia (Stage)")
     'southeastasiastage'
+    >>> cleanup_misc_chars("--hyper-v")
+    'hyperv'
+    >>> cleanup_misc_chars("--is-linux")
+    'islinux'
     """
-    return re.sub(r"[\s()]+", "", display_name).lower()
+    return re.sub(r"[\s()\-_'\"]+", "", display_name).lower()
+
+
+def educated_guess(value: str, choices: Union[Dict[str, List[str]], List[str]]) -> str:
+    """
+    >>> educated_guess('HyperV' ,['--is-linux','--hyper-v'])
+    '--hyper-v'
+    >>> educated_guess('hyper' ,['--is-linux','--hyper-v'])
+    '--hyper-v'
+    >>> educated_guess('h' ,['--is-linux','--hyper-v'])
+    '--hyper-v'
+    >>> educated_guess('LINUX' ,['--is-linux','--hyper-v'])
+    '--is-linux'
+    >>> educated_guess('l' ,['--hyper-v','--is-linux'])
+    '--is-linux'
+    >>> educated_guess('' ,['--is-linux','--hyper-v'])
+    '--is-linux'
+    >>> educated_guess('' ,['--hyper-v','--is-linux'])
+    '--hyper-v'
+    >>> educated_guess('l' ,{'--is-linux':[],'--hyper-v':['app']})
+    '--is-linux'
+    >>> educated_guess('h' ,{'--is-linux':[],'--hyper-v':['app']})
+    '--hyper-v'
+    >>> educated_guess('app' ,{'--is-linux':[], '--hyper-v':[], '':['app']})
+    ''
+    >>>
+    """
+    clean_val = cleanup_misc_chars(value)
+    clean_choices: List[Tuple[int, str]] = []
+    if isinstance(choices, dict):
+        tmp_choices = []
+        for k in choices:
+            tmp_choices.append(k)
+            clean_choices.append((len(clean_choices), cleanup_misc_chars(k)))
+            for synonym in choices[k]:
+                tmp_choices.append(k)
+                clean_choices.append((len(clean_choices), cleanup_misc_chars(synonym)))
+        choices = tmp_choices
+    else:
+        clean_choices = list(enumerate(list(map(cleanup_misc_chars, choices))))
+    for i, v in clean_choices:
+        if clean_val == v:
+            return choices[i]
+    if clean_val:
+        for i, v in clean_choices:
+            if clean_val in v:
+                return choices[i]
+    return choices[0]
 
 
 def to_snake_case(name):
@@ -50,6 +101,10 @@ def to_timedelta(s: str) -> timedelta:
             if t
         )
     )
+
+
+def dt_iso_parse(s):
+    return dt_parse(s).replace(tzinfo=None)
 
 
 FROM_STR_FACTORIES: Dict[Type, Callable] = {

@@ -1,10 +1,44 @@
 import json
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple, Union
 
-from azwebapps import guess_location_from_display_name, print_err
+from azwebapps import (
+    cleanup_misc_chars,
+    dt_iso_parse,
+    educated_guess,
+    print_err,
+)
+
+REC_DIR = Path("recordings")
+
+
+def ensure_recdir():
+    if not REC_DIR.is_dir():
+        REC_DIR.mkdir(0o0755)
+
+
+TESTER = REC_DIR / "tester.json"
+
+
+def add_test(args, out):
+    ensure_recdir()
+    tests = json.load(TESTER.open("rt")) if TESTER.exists() else []
+    tests.append(
+        {
+            "args": args,
+            "out": out,
+            "now": datetime.utcnow().isoformat(),
+        }
+    )
+    json.dump(tests, TESTER.open("wt"))
+
+
+def read_tests():
+    tests = json.load(TESTER.open("rt")) if TESTER.exists() else []
+    return [(r["args"], dt_iso_parse(r["now"]), r["out"]) for r in tests]
 
 
 class CmdRun:
@@ -79,8 +113,8 @@ RECORDS = "records"
 CMD_LINE = "cmdLine"
 
 
-def parse_recorder_file(file: Path) -> Tuple[List[str], List[List[Any]]]:
-    load = json.load(file.open("rt"))
+def parse_recorder_file(file: str) -> Tuple[List[str], List[List[Any]]]:
+    load = json.load((REC_DIR / file).open("rt"))
     return load[CMD_LINE], load[RECORDS]
 
 
@@ -89,8 +123,9 @@ class Recorder:
     content: Dict[str, Any]
     records: List[List[Any]]
 
-    def __init__(self, file: Union[str, Path], cmd_line: List[str]):
-        self.file = Path(file)
+    def __init__(self, file: str, cmd_line: List[str]):
+        ensure_recdir()
+        self.file = REC_DIR / file
         self.content = {}
         self.content[CMD_LINE] = cmd_line
         self.records = []
@@ -148,20 +183,20 @@ class AzCmd(Cmd):
         m = {}
         for l in all_locations:
             name = l["name"]
-            m[guess_location_from_display_name(l["displayName"])] = name
+            m[cleanup_misc_chars(l["displayName"])] = name
             m[name] = name
         return m
 
     def get_acr_list(self):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(f"az acr list -g {config.group}").json()
 
     def get_plan_list(self):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(f"az appservice plan list -g {config.group}").json()
 
     def get_storage_list(self):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(f"az storage account list -g {config.group}").json()
 
     def get_acr_repo_list(self, acr: "c.Acr"):
@@ -179,7 +214,7 @@ class AzCmd(Cmd):
         ).json()
 
     def list_storage_keys(self, storage: "c.Storage"):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(
             f"az storage account keys list -g {config.group}" f" -n {storage.name}"
         ).json()
@@ -191,11 +226,11 @@ class AzCmd(Cmd):
         ).json()
 
     def list_services(self):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(f"az webapp list --resource-group {config.group}").json()
 
     def list_webapp_shares(self, service: "c.Service"):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(
             f"az webapp config storage-account list "
             f"--resource-group {config.group} --name {service.name}",
@@ -210,8 +245,44 @@ class AzCmd(Cmd):
             f"--image {acr.name}/{repo.name}@{iv.digest}"
         ).text()
 
+    def delete_webapp(self, service: "c.Service"):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(
+            f"az webapp delete -n {service.name} -g {config.group} --keep-empty-plan"
+        ).text()
+
+    def delete_app_plan(self, plan: "c.AppServicePlanState"):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(
+            f"az appservice plan delete -y -n {plan.name} -g {config.group} "
+        ).text()
+
+    def create_app_plan(self, plan: "c.AppServicePlan"):
+        state: c.WebServicesState = self.ctx.state
+        kind_opt = educated_guess(
+            plan.kind, {"--is-linux": [], "": ["app"], "--hyper-v": []}
+        )
+        return self.q(
+            f"az appservice plan create -n {plan.name} -g {state.group} --sku {plan.sku} -l {state.location_id(plan.location)} {kind_opt} "
+        ).text()
+
+    def update_app_plan_sku(self, plan: "c.AppServicePlan"):
+        state: c.WebServicesState = self.ctx.state
+        return self.q(
+            f"az appservice plan update -n {plan.name} -g {state.group} --sku {plan.sku}"
+        ).text()
+
+    def create_webapp(self, service: "c.Service"):
+        config: c.WebServicesConfig = self.ctx.config
+        plan: c.AppServicePlan = service.path.parent(2).get_config()
+        return self.q(
+            f"az webapp create -n {service.name} -g {config.group} "
+            f"-p {plan.name} -i {service.docker_url()}",
+            show_err=False,
+        ).json()
+
     def mount_share(self, mount: "c.Mount"):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         service: c.Service = mount.path.parent(2).get_config()
         return self.q(
             f"az webapp config storage-account add "
@@ -219,45 +290,28 @@ class AzCmd(Cmd):
             f"--custom-id {mount.default_custom_id()} "
             f"--storage-type AzureFiles --share-name {mount.share} "
             f"--account-name {mount.account} "
-            f"--access-key {mount.access_key()} --mount-path {mount.name}"
+            f"--access-key {mount.access_key()} --mount-path {mount.name}",
+            show_err=False,
         ).json()
 
     # az webapp config storage-account list --resource-group {config.group} --name {ss.name}
     # az webapp config storage-account delete --custom-id {sharec.custom_id} --resource-group {config.group} --name {ss.name}
 
     def get_service_props(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(
             f"az webapp config container show -n {ss.name} -g {config.group}"
         ).json()
-
-    def list_service_props(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
-        return self.q(
-            f"az webapp config container show -n {ss.name} -g {config.group}"
-        ).json()
-
-    def create_webapp(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
-        plan: c.AppServicePlan = ss.path.parent(2).get_config()
-        return self.q(
-            f"az webapp create -n {ss.name} -g {config.group} "
-            f"-p {plan.name} -i {ss.docker_url()}"
-        ).json()
-
-    def delete_webapp(self, ss: "c.Service"):
-        config: "c.WebServicesConfig" = self.ctx.config
-        return self.q(f"az webapp delete -n {ss.name} -g {config.group} ").text()
 
     def update_webapp_docker(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(
             f"az webapp config container set -n {ss.name} "
             f"-g {config.group} -c {ss.docker}"
         ).json()
 
     def restart_webapp(self, ss: "c.ServiceState"):
-        config: "c.WebServicesConfig" = self.ctx.config
+        config: c.WebServicesConfig = self.ctx.config
         return self.q(f"az webapp restart -n {ss.name} -g {config.group}").text()
 
 

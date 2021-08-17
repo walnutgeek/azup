@@ -271,6 +271,9 @@ class Container:
         o.repo, o.tag = rest.split(":")
         return o
 
+    def url(self):
+        return f"{self.acr}.azurecr.io/{self.acr}/{self.repo}"
+
 
 class Mount(ContextAware):
     name: str
@@ -281,7 +284,7 @@ class Mount(ContextAware):
         return azwebapps.mount_to_id(self.name)
 
     def access_key(self):
-        acc_path = self.path.absolute("storages", self.name)
+        acc_path = self.path.absolute("storages", self.account)
         fs: FileShare = acc_path.child("shares", self.share).get_config()
         storage: StorageState = acc_path.get_state()
         return storage.get_keys()[fs.key_used]
@@ -306,8 +309,23 @@ class Service(ContextAware):
     container: Container
     mounts: typing.Dict[str, Mount]
 
+    def get_docker_spec(self) -> str:
+        return f"DOCKER|{self.docker_url()}"
+
+    def resolved_tag(self):
+        repo: RepositoryState = self.path.absolute(
+            "acrs", self.container.acr, "repos", self.container.repo
+        ).get_state()
+        return repo.by_tag[self.container.tag].git
+
+    def docker_url(self):
+        return f"{self.container.url()}:{self.resolved_tag()}"
+
     def create(self):
-        pass
+        az_cmd = self.path.ctx.az_cmd
+        az_cmd.create_webapp(self)
+        for mount in self.mounts.values():
+            az_cmd.mount_share(mount)
 
 
 class ServiceState(Service):
@@ -328,20 +346,16 @@ class ServiceState(Service):
         }
         return self
 
-    def get_docker_spec(self) -> str:
-        return f"DOCKER|{self.docker_url()}"
-
-    def docker_url(self):
-        repo: RepositoryState = self.path.absolute(
-            "acrs", self.container.acr, "repos", self.container.repo
-        ).get_state()
-        return f"{repo.url()}:{repo.by_tag[self.container.tag].git}"
-
     def update(self):
-        pass
+        service: Service = self.path.get_config()
+        service.container.tag = service.resolved_tag()
+        if to_yaml(service, YAMLABLE_OBJECTS) != to_yaml(self, YAMLABLE_OBJECTS):
+            self.delete()
+            service.create()
 
     def delete(self):
-        pass
+        az_cmd = self.path.ctx.az_cmd
+        az_cmd.delete_webapp(self)
 
 
 class AppServicePlan(ContextAware):
@@ -352,21 +366,34 @@ class AppServicePlan(ContextAware):
     services: typing.Dict[str, Service]
 
     def create(self):
-        pass
+        az_cmd = self.path.ctx.az_cmd
+        az_cmd.create_app_plan(self)
 
 
 class AppServicePlanState(AppServicePlan):
     def load(self, d: typing.Dict[str, typing.Any]) -> "AppServicePlanState":
+        state: WebServicesState = self.path.ctx.state
         self.name = self.path.key()
         self.sku = d["sku"]["name"]
+        self.kind = d["kind"]
+        self.location = state.location_id(d["location"])
         self.services = {}
         return self
 
+    def can_update(self):
+        plan: AppServicePlan = self.path.get_config()
+        plan.location = self.path.ctx.state.location_id(plan.location)
+        return all(getattr(self, n) == getattr(plan, n) for n in ("kind", "location"))
+
     def update(self):
-        pass
+        assert self.can_update()
+        plan: AppServicePlan = self.path.get_config()
+        if self.sku != plan.sku:
+            self.path.ctx.az_cmd.update_app_plan_sku(plan)
 
     def delete(self):
-        pass
+        az_cmd = self.path.ctx.az_cmd
+        az_cmd.delete_app_plan(self)
 
 
 # root objects
@@ -383,7 +410,7 @@ class WebServicesState(WebServicesConfig):
     location_mapping: typing.Dict[str, str]
 
     def location_id(self, name):
-        return self.location_mapping[azwebapps.guess_location_from_display_name(name)]
+        return self.location_mapping[azwebapps.cleanup_misc_chars(name)]
 
     def load(self):
         az_cmd = self.path.ctx.az_cmd
@@ -477,4 +504,9 @@ class Context:
 
 
 from .cmd import AzCmd
-from .yaml import build_factory_dict, load_from_file, setattrs_from_dict
+from .yaml import (
+    build_factory_dict,
+    load_from_file,
+    setattrs_from_dict,
+    to_yaml,
+)
