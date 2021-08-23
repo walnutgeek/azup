@@ -1,7 +1,8 @@
+import inspect
 import re
 import sys
 from datetime import date, datetime, timedelta
-from typing import Callable, Dict, List, Tuple, Type, Union
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 
 from dateutil.parser import parse as dt_parse
 
@@ -124,3 +125,60 @@ def mount_to_id(mount_dir):
     '_d4'
     """
     return mount_dir.replace("/", "_")
+
+
+def filter_options(ll: Iterable[str]) -> Tuple[List[str], Dict[str, Any]]:
+    """
+    >>> filter_options(["a","-a","-b:a"])
+    (['a'], {'a': True, 'b': 'a'})
+    >>>
+    """
+    filtered = []
+    options: Dict[str, Any] = {}
+    for l in ll:
+        if l.startswith("-"):
+            split = l[1:].split(":", 2)
+            if len(split) == 1:
+                options[split[0]] = True
+            else:
+                options[split[0]] = split[1]
+        else:
+            filtered.append(l)
+    return filtered, options
+
+
+class CliActions:
+    def __init__(self, script=sys.argv[0]):
+        cls = type(self)
+        self._actions = [f for f in dir(cls) if not f.startswith("_")]
+        h = []
+        h.append("\nUSAGES:")
+        for a in self._actions:
+            fn = getattr(cls, a)
+            names, _, _, defaults = inspect.getfullargspec(fn)[:4]
+            if defaults is None:
+                defaults = ()
+            def_offset = len(names) - len(defaults)
+            optonals = {k: v for k, v in zip(names[def_offset:], defaults)}
+            a_args = " ".join(
+                f"[{n}]" if n in optonals else f"<{n}>" for n in names[1:]
+            )
+            h.append(f" {script} {a} {a_args}")
+        h.append("")
+        self._show_help = False
+        self._help = "\n".join(h)
+
+    def _check_action(self, act):
+        if act in self._actions:
+            return True
+        else:
+            self._help = f"{act} is not valid action\n" + self._help
+            self._show_help = True
+            return False
+
+    def _invoke(self, *args):
+        if not self._show_help:
+            act = args[0]
+            if self._check_action(act):
+                return getattr(self, act)(*args[1:])
+        return ""

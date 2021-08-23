@@ -184,10 +184,9 @@ class RepositoryState(Repository):
         self.by_tag = {k: iv for iv in self.vers for k in iv.all_ids()}
         return self
 
-    def to_remove(self, now: datetime = None) -> typing.List[ImageVer]:
+    def to_remove(self) -> typing.List[ImageVer]:
         ctx = self.path.ctx
-        if not now:
-            now = ctx.utcnow()
+        now = ctx.az_cmd.utcnow()
         repo: Repository = self.path.get_config()
         cutoff = now - repo.purge_after
         for iv in self.vers:
@@ -469,7 +468,6 @@ class Context:
     config: WebServicesConfig
     state: WebServicesState
     az_cmd: "AzCmd"
-    override_now: datetime
 
     str_factories: typing.Dict[typing.Type, typing.Callable] = {}
     dict_factories: typing.Dict[typing.Type, typing.Callable] = {}
@@ -477,7 +475,6 @@ class Context:
     def __init__(self, az_cmd: "AzCmd"):
         self.az_cmd = az_cmd
         az_cmd.ctx = self
-        self.override_now = None
 
     def root(self):
         return CtxPath(self)
@@ -496,11 +493,6 @@ class Context:
         self.config = config_factory(root)
         self.state = WebServicesState(root)
         self.state.load()
-
-    def utcnow(self):
-        if self.override_now:
-            return self.override_now
-        return datetime.utcnow()
 
 
 from .cmd import AzCmd

@@ -9,6 +9,7 @@ from azwebapps import (
     cleanup_misc_chars,
     dt_iso_parse,
     educated_guess,
+    filter_options,
     print_err,
 )
 
@@ -23,7 +24,22 @@ def ensure_recdir():
 TESTER = REC_DIR / "tester.json"
 
 
-def add_test(args, out):
+class ReplayTest:
+    args: List[str]
+    expected_out: str
+    now: datetime
+    records: List["CmdRun"]
+
+    def __init__(self, args: List[str], expected_out: str, now: Union[datetime, str]):
+        self.args = args
+        self.expected_out = expected_out
+        self.now = now if isinstance(now, datetime) else dt_iso_parse(now)
+        _, options = filter_options(self.args)
+        _, records = parse_recorder_file(options["replay"])
+        self.records = list(map(CmdRun.from_list, records))
+
+
+def add_test(args: List[str], out: str):
     ensure_recdir()
     tests = json.load(TESTER.open("rt")) if TESTER.exists() else []
     tests.append(
@@ -125,12 +141,24 @@ class Recorder:
 
     def __init__(self, file: str, cmd_line: List[str]):
         ensure_recdir()
-        self.file = REC_DIR / file
+        if file.endswith("*"):
+            next_num = len(list(REC_DIR.glob(file)))
+            while True:
+                next_num += 1
+                next_file = REC_DIR / f"{file[:-1]}_{next_num:03d}.json"
+                if not next_file.exists():
+                    break
+            self.file = next_file
+        else:
+            self.file = REC_DIR / file
         self.content = {}
         self.content[CMD_LINE] = cmd_line
         self.records = []
         self.content[RECORDS] = self.records
         self.write()
+
+    def replay_option(self):
+        return f"-replay:{self.file.name}"
 
     def write(self):
         json.dump(self.content, self.file.open("wt"))
@@ -145,6 +173,17 @@ class Cmd:
     ctx: "c.Context"
     record_to: Recorder
     replay_from: Player
+    override_utcnow: datetime
+
+    def __init__(
+        self,
+        record_to: Recorder = None,
+        replay_from: Player = None,
+        now: datetime = None,
+    ):
+        self.record_to = record_to
+        self.replay_from = replay_from
+        self.override_utcnow = now
 
     def q(self, cmd: str, print_out=False, show_err: bool = True):
         if self.replay_from is None:
@@ -162,9 +201,10 @@ class Cmd:
             raise ValueError(f"rc:{self.run.rc}")
         return self
 
-    def __init__(self, record_to: Recorder = None, replay_from: Player = None):
-        self.record_to = record_to
-        self.replay_from = replay_from
+    def utcnow(self):
+        if self.override_utcnow:
+            return self.override_utcnow
+        return datetime.utcnow()
 
     def json(self):
         try:
