@@ -235,6 +235,7 @@ class Storage(ContextAware):
 
 class StorageState(Storage):
     access_tier: str
+    keys: typing.List[str] = None
 
     def load(self, d: typing.Dict[str, typing.Any]):
         az_cmd = self.path.ctx.az_cmd
@@ -248,7 +249,9 @@ class StorageState(Storage):
 
     def get_keys(self) -> typing.List[str]:
         az_cmd = self.path.ctx.az_cmd
-        return [d["value"] for d in az_cmd.list_storage_keys(self)]
+        if self.keys is None:
+            self.keys = [d["value"] for d in az_cmd.list_storage_keys(self)]
+        return self.keys
 
 
 # app services
@@ -272,6 +275,25 @@ class Container:
 
     def url(self):
         return f"{self.acr}.azurecr.io/{self.acr}/{self.repo}"
+
+
+class MongoDb(ContextAware):
+    name: str
+
+
+class MongoDbState(MongoDb):
+    connections: typing.List[str] = None
+
+    def get_connections(self):
+        if self.connections is None:
+            az_cmd = self.path.ctx.az_cmd
+            rr = az_cmd.get_mongo_connections(self)
+            self.connections = [v["connectionString"] for v in rr["connectionStrings"]]
+        return self.connections
+
+    def load(self):
+        self.name = self.path.key()
+        return self
 
 
 class Mount(ContextAware):
@@ -303,10 +325,28 @@ class MountState(Mount):
         return self
 
 
+class MongoConnection(ContextAware):
+    name: str
+    db: str
+    conn_used: int
+
+    def access_key(self):
+        mdd: MongoDbState = self.path.absolute("mongos", self.db).get_state()
+        return mdd.get_connections()[self.conn_used]
+
+
+class MongoConnectionState(MongoConnection):
+    def load(self, d: typing.Tuple[str, int]) -> "MongoConnectionState":
+        self.name = self.path.key()
+        self.db, self.conn_used = d
+        return self
+
+
 class Service(ContextAware):
     name: str
     container: Container
-    mounts: typing.Dict[str, Mount]
+    mounts: typing.Dict[str, Mount] = {}
+    mongo_connections: typing.Dict[str, MongoConnection] = {}
 
     def get_docker_spec(self) -> str:
         return f"DOCKER|{self.docker_url()}"
@@ -325,6 +365,8 @@ class Service(ContextAware):
         az_cmd.create_webapp(self)
         for mount in self.mounts.values():
             az_cmd.mount_share(mount)
+        for conn in self.mongo_connections.values():
+            az_cmd.set_app_settings(self, conn.name, conn.access_key())
 
 
 class ServiceState(Service):
@@ -342,6 +384,21 @@ class ServiceState(Service):
                 self, "mounts", d["value"]["mountPath"]
             ).load(d)
             for d in az_cmd.list_webapp_shares(self)
+        }
+        mongoStates: typing.Iterable[MongoDbState] = (
+            self.path.absolute("mongos").get_state().values()
+        )
+        db_by_cs: typing.Dict[str, typing.Tuple[str, int]] = {
+            conn_string: (db.name, i)
+            for db in mongoStates
+            for i, conn_string in enumerate(db.get_connections())
+        }
+        self.mongo_connections = {
+            d["name"]: MongoConnectionState.build(
+                self, "mongo_connections", d["name"]
+            ).load(db_by_cs[d["value"]])
+            for d in az_cmd.get_app_settings(self)
+            if d["value"] in db_by_cs
         }
         return self
 
@@ -403,6 +460,7 @@ class WebServicesConfig(ContextAware):
     storages: typing.Dict[str, Storage]
     plans: typing.Dict[str, AppServicePlan]
     acrs: typing.Dict[str, Acr]
+    mongos: typing.Dict[str, MongoDb]
 
 
 class WebServicesState(WebServicesConfig):
@@ -420,6 +478,10 @@ class WebServicesState(WebServicesConfig):
         self.acrs = {
             d["name"]: AcrState.build(self, "acrs", d["name"]).load()
             for d in az_cmd.get_acr_list()
+        }
+        self.mongos = {
+            d["name"]: MongoDbState.build(self, "mongos", d["name"]).load()
+            for d in az_cmd.list_cosmos_dbs()
         }
 
         self.storages = {
@@ -454,9 +516,11 @@ class WebServicesState(WebServicesConfig):
 YAMLABLE_OBJECTS = (
     WebServicesConfig,
     AppServicePlan,
+    MongoDb,
     Service,
     Container,
     Mount,
+    MongoConnection,
     Storage,
     FileShare,
     Acr,

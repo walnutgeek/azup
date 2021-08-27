@@ -31,7 +31,6 @@ def t_main(test_args=sys.argv[1:], now=datetime.utcnow()):
 
     rec = None
     play = None
-    action = args[0]
 
     actions = TestActions()
     if "replay" in options:
@@ -40,21 +39,24 @@ def t_main(test_args=sys.argv[1:], now=datetime.utcnow()):
             print_err(f"Replaying: {' '.join(cmd_line)}")
             args = cmd_line
         play = Player(records)
-    elif "record" in options:
-        rec = Recorder(options["record"], args)
-        test_args.remove(f"-record:{options['record']}")
-    elif "add_test" in options:
-        rec = Recorder(f"{action}*", args)
-        test_args.remove("-add_test")
-    elif actions._check_action(action):
-        return actions._invoke(args)
     else:
-        return main(test_args)
+        action = args[0]
+        if "record" in options:
+            rec = Recorder(options["record"], args)
+            test_args.remove(f"-record:{options['record']}")
+        elif "add_test" in options:
+            rec = Recorder(f"{action}*", args)
+        elif actions._check_action(action):
+            return actions._invoke(args)
+        else:
+            return main(test_args)
 
     out = main(args, AzCmd(record_to=rec, replay_from=play, now=now))
 
     if "add_test" in options:
+        test_args.remove("-add_test")
         if play is None:
+            print_err(f"Added to cmd line: {rec.replay_option()}")
             test_args.append(rec.replay_option())
         add_test(test_args, out)
 

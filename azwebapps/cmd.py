@@ -185,14 +185,22 @@ class Cmd:
         self.replay_from = replay_from
         self.override_utcnow = now
 
-    def q(self, cmd: str, print_out=False, show_err: bool = True):
+    def q(
+        self,
+        cmd: str,
+        print_out=False,
+        show_err: bool = True,
+        only_errors: bool = False,
+    ):
+        if only_errors:
+            cmd = cmd + " --only-show-errors"
         if self.replay_from is None:
             self.run = CmdRun(cmd)
-            if self.record_to is not None:
-                self.record_to.record(self.run)
         else:
             self.run = self.replay_from.get(cmd)
             print_err(f"fake: {cmd}")
+        if self.record_to is not None:
+            self.record_to.record(self.run)
         if print_out:
             print_err(self.run.out)
         if show_err and self.run.err:
@@ -262,7 +270,7 @@ class AzCmd(Cmd):
     def list_file_shares(self, storage: "c.Storage"):
         return self.q(
             f"az storage share list --account-name {storage.name} ",
-            show_err=False,
+            only_errors=True,
         ).json()
 
     def list_services(self):
@@ -274,7 +282,7 @@ class AzCmd(Cmd):
         return self.q(
             f"az webapp config storage-account list "
             f"--resource-group {config.group} --name {service.name}",
-            show_err=False,
+            only_errors=True,
         ).json()
 
     def delete_acr_image(self, iv: "c.ImageVer"):
@@ -282,7 +290,8 @@ class AzCmd(Cmd):
         acr: c.Acr = iv.repo_path.parent(2).get_config()
         return self.q(
             f"az acr repository delete --yes -n {acr.name} "
-            f"--image {acr.name}/{repo.name}@{iv.digest}"
+            f"--image {acr.name}/{repo.name}@{iv.digest}",
+            only_errors=True,
         ).text()
 
     def delete_webapp(self, service: "c.Service"):
@@ -318,7 +327,7 @@ class AzCmd(Cmd):
         return self.q(
             f"az webapp create -n {service.name} -g {config.group} "
             f"-p {plan.name} -i {service.docker_url()}",
-            show_err=False,
+            only_errors=True,
         ).json()
 
     def mount_share(self, mount: "c.Mount"):
@@ -331,7 +340,36 @@ class AzCmd(Cmd):
             f"--storage-type AzureFiles --share-name {mount.share} "
             f"--account-name {mount.account} "
             f"--access-key {mount.access_key()} --mount-path {mount.name}",
-            show_err=False,
+            only_errors=True,
+        ).json()
+
+    def list_cosmos_dbs(self):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(f"az cosmosdb list -g {config.group}").json()
+
+    def create_mongo_db(self, mongo: "c.MongoDb"):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(
+            f"az cosmosdb create -n {mongo.name} -g {config.group} --kind MongoDB"
+        ).json()
+
+    def get_mongo_connections(self, mongo: "c.MongoDb"):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(
+            f"az cosmosdb keys list --type connection-strings -n {mongo.name} -g {config.group}"
+        ).json()
+
+    def set_app_settings(self, app: "c.Service", k: str, v: str):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(
+            f"az webapp config appsettings set -n {app.name} -g {config.group} "
+            f"--settings {k}={v}"
+        ).json()
+
+    def get_app_settings(self, app: "c.ServiceState"):
+        config: c.WebServicesConfig = self.ctx.config
+        return self.q(
+            f"az webapp config appsettings list -n {app.name} -g {config.group}"
         ).json()
 
     # az webapp config storage-account list --resource-group {config.group} --name {ss.name}
