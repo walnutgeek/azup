@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple, Union
 
-from azwebapps import (
+from azup import (
     cleanup_misc_chars,
     dt_iso_parse,
     educated_guess,
@@ -393,4 +393,4 @@ class AzCmd(Cmd):
         return self.q(f"az webapp restart -n {ss.name} -g {config.group}").text()
 
 
-import azwebapps.context as c
+import azup.context as c

@@ -37,7 +37,7 @@ except ModuleNotFoundError:
     version = read_file("version.txt").strip()
 
 setup(
-    name="azwebapps",
+    name="azup",
     version=str(version),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -51,13 +51,13 @@ setup(
     description="Work with azure cloud using `az` cli",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/walnutgeek/azfiles",
+    url="https://github.com/walnutgeek/azup",
     author="Walnut Geek",
     author_email="wg@walnutgeek.com",
     license="Apache 2.0",
     packages=find_packages(exclude=("*.tests",)),
     cmdclass=cmdclass_dict,
-    entry_points={"console_scripts": ["azup=azwebapps.main:main"]},
+    entry_points={"console_scripts": ["azup=azup.main:main"]},
     install_requires=install_requires,
     extras_require={"dev": dev_requires},
     zip_safe=False,

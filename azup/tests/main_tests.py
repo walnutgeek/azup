@@ -1,7 +1,7 @@
 import pytest
 
-from azwebapps.cmd import read_tests
-from azwebapps.tests.main import t_main
+from azup.cmd import read_tests
+from azup.tests.main import t_main
 
 testdata = read_tests()
 

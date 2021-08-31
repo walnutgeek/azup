@@ -1,15 +1,9 @@
 import sys
 from datetime import datetime
 
-from azwebapps import CliActions, filter_options, print_err
-from azwebapps.cmd import (
-    AzCmd,
-    Player,
-    Recorder,
-    add_test,
-    parse_recorder_file,
-)
-from azwebapps.main import main
+from azup import CliActions, filter_options, print_err
+from azup.cmd import AzCmd, Player, Recorder, add_test, parse_recorder_file
+from azup.main import main
 
 
 class TestActions(CliActions):

@@ -1,10 +1,10 @@
 import sys
 from typing import List
 
-import azwebapps.context as c
-from azwebapps import CliActions, filter_options, print_err
-from azwebapps.cmd import AzCmd
-from azwebapps.yaml import to_yaml
+import azup.context as c
+from azup import CliActions, filter_options, print_err
+from azup.cmd import AzCmd
+from azup.yaml import to_yaml
 
 
 class Actions(CliActions):

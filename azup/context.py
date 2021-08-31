@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from dateutil.parser import parse as dt_parse
 
-import azwebapps
+import azup
 
 
 class CtxPath:
@@ -302,7 +302,7 @@ class Mount(ContextAware):
     share: str
 
     def default_custom_id(self):
-        return azwebapps.mount_to_id(self.name)
+        return azup.mount_to_id(self.name)
 
     def access_key(self):
         acc_path = self.path.absolute("storages", self.account)
@@ -467,7 +467,7 @@ class WebServicesState(WebServicesConfig):
     location_mapping: typing.Dict[str, str]
 
     def location_id(self, name):
-        return self.location_mapping[azwebapps.cleanup_misc_chars(name)]
+        return self.location_mapping[azup.cleanup_misc_chars(name)]
 
     def load(self):
         az_cmd = self.path.ctx.az_cmd
@@ -553,7 +553,7 @@ class Context:
     ):
         root = self.root()
         root.ctx.dict_factories = build_factory_dict(YAMLABLE_OBJECTS)
-        root.ctx.str_factories = azwebapps.FROM_STR_FACTORIES
+        root.ctx.str_factories = azup.FROM_STR_FACTORIES
         self.config = config_factory(root)
         self.state = WebServicesState(root)
         self.state.load()

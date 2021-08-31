@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Iterable, Type
 import yaml
 from yaml.loader import SafeLoader
 
-from azwebapps.annotations import (
+from azup.annotations import (
     get_args,
     get_attr_hints,
     is_dict,
