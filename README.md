@@ -29,9 +29,9 @@ Stable:
 
     pip install azup
     
-## Help
+## Usage
 
-No to much here but:
+No much but:
 
     $ azup
     USAGES:

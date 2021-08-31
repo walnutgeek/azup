@@ -150,7 +150,10 @@ def filter_options(ll: Iterable[str]) -> Tuple[List[str], Dict[str, Any]]:
 
 class CliActions:
     def __init__(self, script=sys.argv[0]):
-        script = Path(script).name
+        if "-m" == script:
+            script = __name__
+        else:
+            script = Path(script).name
         cls = type(self)
         self._actions = [f for f in dir(cls) if not f.startswith("_")]
         h = []
