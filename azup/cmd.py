@@ -42,13 +42,7 @@ class ReplayTest:
 def add_test(args: List[str], out: str):
     ensure_recdir()
     tests = json.load(TESTER.open("rt")) if TESTER.exists() else []
-    tests.append(
-        {
-            "args": args,
-            "out": out,
-            "now": datetime.utcnow().isoformat(),
-        }
-    )
+    tests.append({"args": args, "out": out, "now": datetime.utcnow().isoformat()})
     json.dump(tests, TESTER.open("wt"))
 
 
@@ -269,8 +263,7 @@ class AzCmd(Cmd):
 
     def list_file_shares(self, storage: "c.Storage"):
         return self.q(
-            f"az storage share list --account-name {storage.name} ",
-            only_errors=True,
+            f"az storage share list --account-name {storage.name} ", only_errors=True
         ).json()
 
     def list_services(self):

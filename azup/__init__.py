@@ -90,10 +90,10 @@ INTERVALS = {
 
 def to_timedelta(s: str) -> timedelta:
     """
-    >>> to_timedelta("1Y1D")
-    datetime.timedelta(days=366, seconds=21600)
-    >>> to_timedelta("1Y 1D")
-    datetime.timedelta(days=366, seconds=21600)
+    >>> x=to_timedelta("1Y1D"); (x.days,x.seconds)
+    (366, 21600)
+    >>> x=to_timedelta("1Y 1D"); (x.days,x.seconds)
+    (366, 21600)
     """
     return timedelta(
         seconds=sum(
