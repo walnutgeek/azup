@@ -29,7 +29,16 @@ Stable:
 
     pip install azup
     
-    
+## Help
+
+No to much here but:
+
+    $ azup
+    USAGES:
+     azup dump_config <resource_group>
+     azup list_images <config_yml>
+     azup purge_acr <config_yml>
+     azup syncup_apps <config_yml>
     
 ## YAML config
 

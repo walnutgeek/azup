@@ -111,4 +111,4 @@ def to_yaml(o, yamlables: Iterable[Type]):
     return yaml.safe_dump(to_dict(o, yamlables))
 
 
-from .context import ContextAware, CtxPath
+from azup.context import ContextAware, CtxPath
