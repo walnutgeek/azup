@@ -2,6 +2,7 @@ import inspect
 import re
 import sys
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 
 from dateutil.parser import parse as dt_parse
@@ -149,6 +150,7 @@ def filter_options(ll: Iterable[str]) -> Tuple[List[str], Dict[str, Any]]:
 
 class CliActions:
     def __init__(self, script=sys.argv[0]):
+        script = Path(script).name
         cls = type(self)
         self._actions = [f for f in dir(cls) if not f.startswith("_")]
         h = []

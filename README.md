@@ -1,10 +1,11 @@
 # azup
 
-Army of robots already here they are just hiding in datacenters. This is my 
+Army of robots already here, they are just hiding in datacenters. This is my 
 attempt to understand how to manage that army in context of Azure cloud.
 
-I know there are projects that do simular things: ARM templates, Terraform 
-and may be more ... and I wnted to understand it from first principles.
+I know there are well supported projects that do simular things: 
+ARM templates, Terraform and may be more ... and still I want to understand 
+cloud from first principles. So here it is. 
 
 I may do simular thing for GCP and AWS later.
 
@@ -17,6 +18,18 @@ Install all dependencies:
 Tidy up and run tests:
     
     python setup.py tidy; pytest
+    
+## Install
+
+Beta:
+
+    pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple azup
+    
+Stable:
+
+    pip install azup
+    
+    
     
 ## YAML config
 

@@ -559,8 +559,8 @@ class Context:
         self.state.load()
 
 
-from .cmd import AzCmd
-from .yaml import (
+from azup.cmd import AzCmd
+from azup.yaml import (
     build_factory_dict,
     load_from_file,
     setattrs_from_dict,
