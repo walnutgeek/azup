@@ -182,3 +182,44 @@ class CliActions:
             if self._check_action(act):
                 return getattr(self, act)(*args[1:])
         return ""
+
+
+def replace_all(replacements: Dict[str, str], text: str) -> str:
+    """
+    >>> replace_all({"ab":"xy", "zy": "qtx", "yz": "x", "xml": ""}, "yzk ab zy ab k")
+    'xk xy qtx xy k'
+
+    """
+    for k, v in replacements.items():
+        pos = 0
+        while True:
+            try:
+                new_pos = text.index(k, pos)
+                text = text[:new_pos] + v + text[new_pos + len(k) :]
+                pos = new_pos + len(v)
+            except ValueError:
+                break
+    return text
+
+
+class Secrets:
+    vals: Dict[str, str] = {}
+    keys: Dict[str, str] = {}
+
+    def add(self, prefix: str, value: str):
+        idx = 1
+        if value in self.keys:
+            return self.keys[value]
+        while True:
+            nk = f"{prefix}_{idx:03d}"
+            if nk not in self.vals:
+                self.vals = {nk: value, **self.vals}
+                self.keys = {value: nk, **self.keys}
+                return nk
+            idx += 1
+
+    def show(self, text: str):
+        return replace_all(self.vals, text)
+
+    def hide(self, text: str):
+        return replace_all(self.keys, text)
