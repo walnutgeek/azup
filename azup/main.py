@@ -99,5 +99,9 @@ def main(args: List[str] = sys.argv[1:], az_cmd: AzCmd = None):
     return out
 
 
-if __name__ == "__main__":
+def print_main():
     print(main() or "")
+
+
+if __name__ == "__main__":
+    print_main()
