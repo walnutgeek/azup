@@ -19,7 +19,7 @@ class Actions(CliActions):
             for repo_name in acr.repos:
                 repo: c.RepositoryState = acr.repos[repo_name]
                 repo.to_remove()
-                out.append(f"Repo: {acr_name}/{repo_name}")
+                out.append(f"Repo: {acr_name}{c.ACR_SUFFIX}/{repo_name}")
                 for iv in repo.vers:
                     out.append(str(iv))
         return "\n".join(out) + "\n"

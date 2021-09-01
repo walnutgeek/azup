@@ -5,6 +5,8 @@ from dateutil.parser import parse as dt_parse
 
 import azup
 
+ACR_SUFFIX = ".azurecr.io"
+
 
 class CtxPath:
     ctx: "Context"
@@ -167,7 +169,7 @@ class Repository(ContextAware):
 
     def url(self):
         acr: Acr = self.path.parent(2).get_config()
-        return f"{acr.name}.azurecr.io/{acr.name}/{self.name}"
+        return f"{acr.name}{ACR_SUFFIX}/{self.name}"
 
 
 class RepositoryState(Repository):
@@ -258,6 +260,18 @@ class StorageState(Storage):
 
 
 class Container:
+    """
+    >>> c = Container.parse("DOCKER|repo.azurecr.io/path1/path2:2a2cb95")
+    >>> c.acr
+    'repo'
+    >>> c.repo
+    'path1/path2'
+    >>> c.tag
+    '2a2cb95'
+    >>> c.url()
+    'repo.azurecr.io/path1/path2'
+    """
+
     acr: str
     repo: str
     tag: str
@@ -269,12 +283,14 @@ class Container:
     @classmethod
     def parse(cls, docker_spec: str) -> "Container":
         o = cls()
-        _, o.acr, rest = docker_spec.split("|")[1].split("/")
+        acr_host, rest = docker_spec.split("|")[1].split("/", maxsplit=1)
+        assert acr_host.endswith(ACR_SUFFIX)
+        o.acr = acr_host[: -len(ACR_SUFFIX)]
         o.repo, o.tag = rest.split(":")
         return o
 
     def url(self):
-        return f"{self.acr}.azurecr.io/{self.acr}/{self.repo}"
+        return f"{self.acr}{ACR_SUFFIX}/{self.repo}"
 
 
 class MongoDb(ContextAware):

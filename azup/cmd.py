@@ -242,17 +242,14 @@ class AzCmd(Cmd):
         return self.q(f"az storage account list -g {config.group}").json()
 
     def get_acr_repo_list(self, acr: "c.Acr"):
-        return [
-            path.split("/")[1]
-            for path in self.q(f"az acr repository list -n {acr.name}").json()
-        ]
+        return self.q(f"az acr repository list -n {acr.name}").json()
 
     def show_manifests(self, repo: "c.Repository", acr: "c.Acr" = None):
         if acr is None:
             acr = repo.path.parent(2).get_state()
         return self.q(
             f"az acr repository show-manifests -n {acr.name}"
-            f" --repository {acr.name}/{repo.name}"
+            f" --repository {repo.name}"
         ).json()
 
     def list_storage_keys(self, storage: "c.Storage"):
@@ -283,7 +280,7 @@ class AzCmd(Cmd):
         acr: c.Acr = iv.repo_path.parent(2).get_config()
         return self.q(
             f"az acr repository delete --yes -n {acr.name} "
-            f"--image {acr.name}/{repo.name}@{iv.digest}",
+            f"--image {repo.name}@{iv.digest}",
             only_errors=True,
         ).text()
 
