@@ -189,8 +189,13 @@ class RepositoryState(Repository):
     def to_remove(self) -> typing.List[ImageVer]:
         ctx = self.path.ctx
         now = ctx.az_cmd.utcnow()
-        repo: Repository = self.path.get_config()
-        cutoff = now - repo.purge_after
+        purge_after = azup.to_timedelta("1Y")
+        try:
+            repo: Repository = self.path.get_config()
+            purge_after = repo.purge_after
+        except (KeyError, AttributeError):
+            pass
+        cutoff = now - purge_after
         for iv in self.vers:
             iv.set_tag(PURGE, iv.timestamp < cutoff)
         for tag in ctx.state.find_all_tags_in_use(self):
