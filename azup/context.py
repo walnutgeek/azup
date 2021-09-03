@@ -88,6 +88,8 @@ class CtxPresence(typing.NamedTuple):
     def get_config(self):
         return self.path.get_config()
 
+def to__str__(that):
+    return to_dict(that, YAMLABLE_OBJECTS)
 
 class ContextAware:
     path: CtxPath
@@ -113,6 +115,8 @@ class ContextAware:
         for k, v in props.items():
             setattr(self, k, v)
         return self
+
+    __str__ = to__str__
 
 
 # container image repo
@@ -205,10 +209,13 @@ class RepositoryState(Repository):
 
 class Acr(ContextAware):
     name: str
+    key_used: int = 0
     repos: typing.Dict[str, Repository]
 
 
 class AcrState(Acr):
+    credentials: typing.Tuple[str, str] = None
+
     def load(self) -> "AcrState":
         az_cmd = self.path.ctx.az_cmd
         self.name = self.path.key()
@@ -217,6 +224,13 @@ class AcrState(Acr):
             for n in az_cmd.get_acr_repo_list(self)
         }
         return self
+
+    def get_credentials(self)->typing.Tuple[str, str]:
+        if self.credentials is None:
+            az_cmd = self.path.ctx.az_cmd
+            cred = az_cmd.get_acr_credential(self)
+            self.credentials = (cred["username"], cred["passwords"][self.key_used]["value"])
+        return self.credentials
 
 
 # storage
@@ -277,7 +291,8 @@ class Container:
     'repo.azurecr.io/path1/path2'
     """
 
-    acr: str
+    acr: str = None
+    host: str
     repo: str
     tag: str
 
@@ -288,14 +303,19 @@ class Container:
     @classmethod
     def parse(cls, docker_spec: str) -> "Container":
         o = cls()
-        acr_host, rest = docker_spec.split("|")[1].split("/", maxsplit=1)
-        assert acr_host.endswith(ACR_SUFFIX)
-        o.acr = acr_host[: -len(ACR_SUFFIX)]
-        o.repo, o.tag = rest.split(":")
+        o.host, rest = docker_spec.split("|")[1].split("/", maxsplit=1)
+        o.acr = o.host[: -len(ACR_SUFFIX)] if o.host.endswith(ACR_SUFFIX) else None
+        o.repo, o.tag = rest.split("@")
         return o
 
     def url(self):
-        return f"{self.acr}{ACR_SUFFIX}/{self.repo}"
+        return (
+            f"{self.host}/{self.repo}"
+            if self.acr is None
+            else f"{self.acr}{ACR_SUFFIX}/{self.repo}"
+        )
+
+    __str__ = to__str__
 
 
 class MongoDb(ContextAware):
@@ -376,10 +396,10 @@ class Service(ContextAware):
         repo: RepositoryState = self.path.absolute(
             "acrs", self.container.acr, "repos", self.container.repo
         ).get_state()
-        return repo.by_tag[self.container.tag].git
+        return repo.by_tag[self.container.tag].digest
 
     def docker_url(self):
-        return f"{self.container.url()}:{self.resolved_tag()}"
+        return f"{self.container.url()}@{self.resolved_tag()}"
 
     def create(self):
         az_cmd = self.path.ctx.az_cmd
@@ -425,7 +445,13 @@ class ServiceState(Service):
 
     def update(self):
         service: Service = self.path.get_config()
-        service.container.tag = service.resolved_tag()
+        try:
+            service.container.tag = service.resolved_tag()
+        except:
+            import traceback, sys
+            traceback.print_tb(sys.last_traceback)
+            azup.print_err(f"Cannot resolve: {service.container}")
+
         if to_yaml(service, YAMLABLE_OBJECTS) != to_yaml(self, YAMLABLE_OBJECTS):
             self.delete()
             service.create()
@@ -549,6 +575,7 @@ YAMLABLE_OBJECTS = (
 )
 
 
+
 class Context:
     config: WebServicesConfig
     state: WebServicesState
@@ -586,4 +613,4 @@ from azup.yaml import (
     load_from_file,
     setattrs_from_dict,
     to_yaml,
-)
+    to_dict)

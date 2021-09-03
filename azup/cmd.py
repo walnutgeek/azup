@@ -235,7 +235,12 @@ class AzCmd(Cmd):
 
     def get_plan_list(self):
         config: c.WebServicesConfig = self.ctx.config
-        return self.q(f"az appservice plan list -g {config.group}").json()
+        plans = [
+            p
+            for p in self.q(f"az appservice plan list").json()
+            if p["resourceGroup"] == config.group
+        ]
+        return plans
 
     def get_storage_list(self):
         config: c.WebServicesConfig = self.ctx.config
@@ -243,6 +248,9 @@ class AzCmd(Cmd):
 
     def get_acr_repo_list(self, acr: "c.Acr"):
         return self.q(f"az acr repository list -n {acr.name}").json()
+
+    def get_acr_credential(self, acr: "c.Acr"):
+        return self.q(f"az acr credential show -n {acr.name}").json()
 
     def show_manifests(self, repo: "c.Repository", acr: "c.Acr" = None):
         if acr is None:
@@ -314,9 +322,14 @@ class AzCmd(Cmd):
     def create_webapp(self, service: "c.Service"):
         config: c.WebServicesConfig = self.ctx.config
         plan: c.AppServicePlan = service.path.parent(2).get_config()
+        append=""
+        if service.container.acr is not None and service.container.acr in self.ctx.state.acrs:
+            acr:c.AcrState = self.ctx.state.acrs[service.container.acr]
+            append = f" -s {acr.get_credentials()[0]} -w {acr.get_credentials()[1]}"
+
         return self.q(
             f"az webapp create -n {service.name} -g {config.group} "
-            f"-p {plan.name} -i {service.docker_url()}",
+            f"-p {plan.name} -i {service.docker_url()}{append}",
             only_errors=True,
         ).json()
 
@@ -361,6 +374,7 @@ class AzCmd(Cmd):
         return self.q(
             f"az webapp config appsettings list -n {app.name} -g {config.group}"
         ).json()
+
 
     # az webapp config storage-account list --resource-group {config.group} --name {ss.name}
     # az webapp config storage-account delete --custom-id {sharec.custom_id} --resource-group {config.group} --name {ss.name}
