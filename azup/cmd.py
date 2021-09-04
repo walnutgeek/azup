@@ -322,9 +322,12 @@ class AzCmd(Cmd):
     def create_webapp(self, service: "c.Service"):
         config: c.WebServicesConfig = self.ctx.config
         plan: c.AppServicePlan = service.path.parent(2).get_config()
-        append=""
-        if service.container.acr is not None and service.container.acr in self.ctx.state.acrs:
-            acr:c.AcrState = self.ctx.state.acrs[service.container.acr]
+        append = ""
+        if (
+            service.container.acr is not None
+            and service.container.acr in self.ctx.state.acrs
+        ):
+            acr: c.AcrState = self.ctx.state.acrs[service.container.acr]
             append = f" -s {acr.get_credentials()[0]} -w {acr.get_credentials()[1]}"
 
         return self.q(
@@ -374,7 +377,6 @@ class AzCmd(Cmd):
         return self.q(
             f"az webapp config appsettings list -n {app.name} -g {config.group}"
         ).json()
-
 
     # az webapp config storage-account list --resource-group {config.group} --name {ss.name}
     # az webapp config storage-account delete --custom-id {sharec.custom_id} --resource-group {config.group} --name {ss.name}

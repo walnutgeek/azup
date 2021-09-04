@@ -88,8 +88,10 @@ class CtxPresence(typing.NamedTuple):
     def get_config(self):
         return self.path.get_config()
 
+
 def to__str__(that):
     return to_dict(that, YAMLABLE_OBJECTS)
+
 
 class ContextAware:
     path: CtxPath
@@ -225,11 +227,14 @@ class AcrState(Acr):
         }
         return self
 
-    def get_credentials(self)->typing.Tuple[str, str]:
+    def get_credentials(self) -> typing.Tuple[str, str]:
         if self.credentials is None:
             az_cmd = self.path.ctx.az_cmd
             cred = az_cmd.get_acr_credential(self)
-            self.credentials = (cred["username"], cred["passwords"][self.key_used]["value"])
+            self.credentials = (
+                cred["username"],
+                cred["passwords"][self.key_used]["value"],
+            )
         return self.credentials
 
 
@@ -448,7 +453,9 @@ class ServiceState(Service):
         try:
             service.container.tag = service.resolved_tag()
         except:
-            import traceback, sys
+            import sys
+            import traceback
+
             traceback.print_tb(sys.last_traceback)
             azup.print_err(f"Cannot resolve: {service.container}")
 
@@ -575,7 +582,6 @@ YAMLABLE_OBJECTS = (
 )
 
 
-
 class Context:
     config: WebServicesConfig
     state: WebServicesState
@@ -612,5 +618,6 @@ from azup.yaml import (
     build_factory_dict,
     load_from_file,
     setattrs_from_dict,
+    to_dict,
     to_yaml,
-    to_dict)
+)
