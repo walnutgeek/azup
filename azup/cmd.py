@@ -327,7 +327,7 @@ class AzCmd(Cmd):
             service.container.acr is not None
             and service.container.acr in self.ctx.state.acrs
         ):
-            acr: c.AcrState = self.ctx.state.acrs[service.container.acr]
+            acr: c.AcrState = self.ctx.state.acrs[service.container.acr]  # type:ignore
             append = f" -s {acr.get_credentials()[0]} -w {acr.get_credentials()[1]}"
 
         return self.q(

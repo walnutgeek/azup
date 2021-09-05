@@ -285,13 +285,13 @@ class StorageState(Storage):
 
 class Container:
     """
-    >>> c = Container.parse("DOCKER|repo.azurecr.io/path1/path2:2a2cb95")
+    >>> c = Container.parse("DOCKER|repo.azurecr.io/path1/path2@sha2:2a2cb95")
     >>> c.acr
     'repo'
     >>> c.repo
     'path1/path2'
     >>> c.tag
-    '2a2cb95'
+    'sha2:2a2cb95'
     >>> c.url()
     'repo.azurecr.io/path1/path2'
     """
