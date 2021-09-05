@@ -82,7 +82,7 @@ class Actions(CliActions):
 
     def dump_config(self, resource_group):
         self.ctx.init_context(
-            lambda root: c.WebServicesState(root).update(group=resource_group)
+            lambda root: c.WebServicesState(root).set(group=resource_group)
         )
         return to_yaml(self.ctx.state, c.YAMLABLE_OBJECTS)
 

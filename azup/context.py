@@ -42,7 +42,7 @@ class CtxPath:
                 lambda n: CtxPresence(
                     self.child(n), n in self.get_config(), n in self.get_state()
                 ),
-                self.all_keys(),
+                sorted(self.all_keys()),
             )
         )
 
@@ -113,7 +113,7 @@ class ContextAware:
         setattrs_from_dict(o, path, d)
         return o
 
-    def update(self, **props):
+    def set(self, **props):
         for k, v in props.items():
             setattr(self, k, v)
         return self
@@ -294,6 +294,15 @@ class Container:
     'sha2:2a2cb95'
     >>> c.url()
     'repo.azurecr.io/path1/path2'
+    >>> c2 = Container.parse("DOCKER|repo.azurecr.io/path1/path2:2a2cb95")
+    >>> c2.acr
+    'repo'
+    >>> c2.repo
+    'path1/path2'
+    >>> c2.tag
+    '2a2cb95'
+    >>> c2.url()
+    'repo.azurecr.io/path1/path2'
     """
 
     acr: str = None
@@ -310,7 +319,7 @@ class Container:
         o = cls()
         o.host, rest = docker_spec.split("|")[1].split("/", maxsplit=1)
         o.acr = o.host[: -len(ACR_SUFFIX)] if o.host.endswith(ACR_SUFFIX) else None
-        o.repo, o.tag = rest.split("@")
+        o.repo, o.tag = rest.split("@" if "@" in rest else ":")
         return o
 
     def url(self):
