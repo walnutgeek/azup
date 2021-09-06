@@ -191,11 +191,12 @@ class CliActions:
 
 def replace_all(replacements: Dict[str, str], text: str) -> str:
     """
-    >>> replace_all({"ab":"xy", "zy": "qtx", "yz": "x", "xml": ""}, "yzk ab zy ab k")
+    >>> replace_all({"ab":"xy", "zy": "qtx", "yz": "x", "xml": "", "abx":""}, "abxyzk ab zy ab k")
     'xk xy qtx xy k'
 
     """
-    for k, v in replacements.items():
+    for k in reversed(sorted(replacements, key=len)):
+        v = replacements[k]
         pos = 0
         while True:
             try:

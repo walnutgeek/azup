@@ -57,10 +57,10 @@ class CmdRun:
     err: str
     rc: int
 
-    def __init__(self, cmd, rc=None, out=None, err=None):
+    def __init__(self, cmd, rc=None, out=None, err=None, log=print_err):
         self.cmd = cmd
         if rc is None:
-            print_err(f"run: {cmd}")
+            log(f"run: {cmd}")
             process = subprocess.run(cmd.split(), capture_output=True)
             self.rc = process.returncode
             self.out = process.stdout.decode("utf-8")
@@ -186,13 +186,16 @@ class Cmd:
         show_err: bool = True,
         only_errors: bool = False,
     ):
+        def log(text):
+            print_err(self.ctx.secrets.hide(text))
+
         if only_errors:
             cmd = cmd + " --only-show-errors"
         if self.replay_from is None:
-            self.run = CmdRun(cmd)
+            self.run = CmdRun(cmd, log=log)
         else:
             self.run = self.replay_from.get(cmd)
-            print_err(f"fake: {cmd}")
+            log(f"fake: {cmd}")
         if self.record_to is not None:
             self.record_to.record(self.run)
         if print_out:
@@ -208,12 +211,16 @@ class Cmd:
             return self.override_utcnow
         return datetime.utcnow()
 
-    def json(self):
+    def json(self, extract_secrets=None):
         try:
-            return json.loads(self.run.out)
+            data = json.loads(self.run.out)
         except:
-            print_err(f"not json: {self.run.out}", file=sys.stderr)
+            print_err(f"not json: {self.run.out}")
             return None
+        if extract_secrets is not None:
+            for prefix, key in extract_secrets(data):
+                self.ctx.secrets.add(prefix, key)
+        return data
 
     def text(self):
         return self.run.out
@@ -250,7 +257,9 @@ class AzCmd(Cmd):
         return self.q(f"az acr repository list -n {acr.name}").json()
 
     def get_acr_credential(self, acr: "c.Acr"):
-        return self.q(f"az acr credential show -n {acr.name}").json()
+        return self.q(f"az acr credential show -n {acr.name}").json(
+            lambda json: (("hidden_acr_pwd", pwd["value"]) for pwd in json["passwords"])
+        )
 
     def show_manifests(self, repo: "c.Repository", acr: "c.Acr" = None):
         if acr is None:
@@ -264,7 +273,7 @@ class AzCmd(Cmd):
         config: c.WebServicesConfig = self.ctx.config
         return self.q(
             f"az storage account keys list -g {config.group}" f" -n {storage.name}"
-        ).json()
+        ).json(lambda json: (("hidden_storage_key", pwd["value"]) for pwd in json))
 
     def list_file_shares(self, storage: "c.Storage"):
         return self.q(
@@ -361,9 +370,16 @@ class AzCmd(Cmd):
 
     def get_mongo_connections(self, mongo: "c.MongoDb"):
         config: c.WebServicesConfig = self.ctx.config
-        return self.q(
+        json = self.q(
             f"az cosmosdb keys list --type connection-strings -n {mongo.name} -g {config.group}"
-        ).json()
+        ).json(
+            lambda json: (
+                ("hidden_connection_string", c["connectionString"])
+                for c in json["connectionStrings"]
+            )
+        )
+
+        return json
 
     def set_app_settings(self, app: "c.Service", k: str, v: str):
         config: c.WebServicesConfig = self.ctx.config

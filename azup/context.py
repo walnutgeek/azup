@@ -595,6 +595,7 @@ class Context:
     config: WebServicesConfig
     state: WebServicesState
     az_cmd: "AzCmd"
+    secrets: azup.Secrets
 
     str_factories: typing.Dict[typing.Type, typing.Callable] = {}
     dict_factories: typing.Dict[typing.Type, typing.Callable] = {}
@@ -602,6 +603,7 @@ class Context:
     def __init__(self, az_cmd: "AzCmd"):
         self.az_cmd = az_cmd
         az_cmd.ctx = self
+        self.secrets = azup.Secrets()
 
     def root(self):
         return CtxPath(self)
