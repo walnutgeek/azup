@@ -203,7 +203,8 @@ class RepositoryState(Repository):
             pass
         cutoff = now - purge_after
         for iv in self.vers:
-            iv.set_tag(PURGE, iv.timestamp < cutoff)
+            if 0 == len(iv.labels):
+                iv.set_tag(PURGE, iv.timestamp < cutoff)
         for tag in ctx.state.find_all_tags_in_use(self):
             self.by_tag[tag].set_tag(IN_USE, True).set_tag(PURGE, False)
         return [iv for iv in self.vers if PURGE in iv.tags]
