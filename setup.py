@@ -4,7 +4,8 @@ cmdclass_dict = {}  # type:ignore
 
 # MANIFEST.in ensures that readme and version included into sdist
 
-install_requires = ["pyyaml", "python-dateutil"]
+install_requires = ["pyyaml", "python-dateutil",
+                    "azure-mgmt-resource>=18.0.0", "azure-identity>=1.5.0"]
 
 dev_requires = [
     "hs-build-tools",

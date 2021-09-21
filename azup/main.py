@@ -102,6 +102,10 @@ class Actions(CliActions):
         return to_yaml(self.ctx.state, c.YAMLABLE_OBJECTS)
 
 
+    def create_rg(self, resource_group):
+        import azup.api
+        return azup.api.create_rg(self.ctx.az_cmd.get_account()['id'],resource_group)
+
 def main(args: List[str] = sys.argv[1:], az_cmd: AzCmd = None):
     args, options = filter_options(args)
     if az_cmd is None:
