@@ -424,6 +424,10 @@ class Service(ContextAware):
         for conn in self.mongo_connections.values():
             az_cmd.set_app_settings(self, conn.name, conn.access_key())
 
+    def restart(self):
+        self.path.ctx.az_cmd.restart_webapp(self)
+
+
 
 class ServiceState(Service):
     state: str
@@ -472,6 +476,8 @@ class ServiceState(Service):
         if to_yaml(service, YAMLABLE_OBJECTS) != to_yaml(self, YAMLABLE_OBJECTS):
             self.delete()
             service.create()
+            return True
+        return False
 
     def delete(self):
         az_cmd = self.path.ctx.az_cmd
@@ -510,6 +516,8 @@ class AppServicePlanState(AppServicePlan):
         plan: AppServicePlan = self.path.get_config()
         if self.sku != plan.sku:
             self.path.ctx.az_cmd.update_app_plan_sku(plan)
+            return True
+        return False
 
     def delete(self):
         az_cmd = self.path.ctx.az_cmd

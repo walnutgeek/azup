@@ -410,9 +410,12 @@ class AzCmd(Cmd):
             f"-g {config.group} -c {ss.docker}"
         ).json()
 
-    def restart_webapp(self, ss: "c.ServiceState"):
+    def restart_webapp(self, ss: "c.Service"):
         config: c.WebServicesConfig = self.ctx.config
         return self.q(f"az webapp restart -n {ss.name} -g {config.group}").text()
+
+    def get_account(self):
+        return self.q(f"az account show").json()
 
 
 import azup.context as c

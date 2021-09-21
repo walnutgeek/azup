@@ -1,5 +1,5 @@
 import sys
-from typing import List
+from typing import List, Dict
 
 import azup.context as c
 from azup import CliActions, filter_options, print_err
@@ -41,6 +41,7 @@ class Actions(CliActions):
         plans_path = self.ctx.root().child("plans")
         # Delete services and plans that not mentioned in config, and create plans
         # that does not exist in azure
+        need_restarts: Dict[str,c.Service] = {}
         need_reload = False
         for plan in plans_path.all_presences():
 
@@ -72,13 +73,27 @@ class Actions(CliActions):
         # it's services
         for plan in plans_path.all_presences():
             assert plan.in_state and plan.in_config, f"{plan} should be created already"
-            plan.get_state().update()
+            plan_updated = plan.get_state().update()
+
             for service in plan.path.child("services").all_presences():
                 assert service.in_config, f"{service} should be mentioned in config"
+                if plan_updated:
+                    need_restarts[service.path.key()] = service.get_config()
                 if not service.in_state:
                     service.get_config().create()
+                    need_restarts[service.path.key()] = service.get_config()
                 else:
-                    service.get_state().update()
+                    if service.get_state().update():
+                        need_restarts[service.path.key()] = service.get_config()
+
+        for service_name in sorted(need_restarts):
+            need_restarts[service_name].restart()
+
+
+
+
+
+
 
     def dump_config(self, resource_group):
         self.ctx.init_context(
